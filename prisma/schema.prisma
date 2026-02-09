@@ -30,17 +30,28 @@ model Job {
 }
 
 model Resume {
-  id             String   @id @default(uuid())
-  jobId          String
-  candidateName  String
-  candidateEmail String?
-  fileUrl        String
-  uploadedAt     DateTime @default(now())
+  id           String   @id @default(uuid())
+  jobId        String
 
-  job            Job      @relation(fields: [jobId], references: [id])
-  parsed         ParsedResume?
-  results        ScreeningResult[]
+  storagePath  String
+  status       ResumeStatus @default(PENDING)
+
+  uploadedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  job          Job      @relation(fields: [jobId], references: [id])
+  parsed       ParsedResume?
+  results      ScreeningResult[]
 }
+
+enum ResumeStatus {
+  PENDING
+  UPLOADED
+  PARSED
+  EMBEDDED
+  READY
+}
+
 
 model ParsedResume {
   id         String   @id @default(uuid())

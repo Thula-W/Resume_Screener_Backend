@@ -4,7 +4,7 @@ import admin from "../config/firebase.ts";
 export interface AuthRequest extends Request {
   headers: any;
   user?: {
-    uid: string;
+    firebaseUid: string;
     email?: string;
   };
 }
@@ -24,9 +24,8 @@ export const authenticate = async (
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-
     req.user = {
-      uid: decoded.uid,
+      firebaseUid: decoded.uid,
       email: decoded.email,
     };
 

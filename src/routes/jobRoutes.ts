@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { authenticate } from "../middleware/auth.ts";
 
-import { getMe } from "../controllers/user.controller.ts";
+import { addJob } from "../controllers/job.controlls.ts";
 
 const router = Router();
 
-router.get('/',authenticate, getMe);
+router.post('/',authenticate, addJob);
+
 
 export default router;
