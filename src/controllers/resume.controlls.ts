@@ -49,7 +49,7 @@ export const uploadIntent = async (req: Request, res: Response) => {
     }
 
     const fileId = `${Date.now()}_${crypto.randomUUID()}`;
-    const storagePath = `resumes/${firebaseUid}/${fileId}.pdf`;
+    const storagePath = `${firebaseUid}/${fileId}.pdf`;
 
     const resume = await prisma.resume.create({
       data: {
@@ -98,9 +98,10 @@ export const confirmUpload = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Invalid resume state" });
     }
 
+    const paths = resume.storagePath.split("/");
     const { error: uploadError } = await supabase.storage
       .from("resumes")
-      .upload(storagePath, file.buffer, {
+      .upload(paths.slice(1).join("/"), file.buffer, {
         contentType: "application/pdf",
         upsert: false,
       });
