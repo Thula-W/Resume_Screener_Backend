@@ -18,12 +18,13 @@
   "dependencies": {
     "@prisma/client": "^7.3.0",
     "@supabase/supabase-js": "^2.95.3",
+    "bullmq": "^5.70.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
     "firebase": "^12.9.0",
     "firebase-admin": "^13.6.1",
-    "multer": "^2.0.2",
+    "ioredis": "^5.10.0",
     "pdfjs-dist": "^5.4.624"
   }
 }

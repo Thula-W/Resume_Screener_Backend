@@ -48,11 +48,11 @@ export const processResume = async (resumeId: string) => {
       console.log(resume.storagePath)
       if (!resume) throw new Error("Resume not found");
 
-      const paths = resume.storagePath.split("/");
+      // const paths = resume.storagePath.split("/");
 
       const fileBuffer = await downloadResumeFile(
-          paths[0],
-          paths.slice(1).join("/")
+          'resumes',
+          resume.storagePath
       );
 
       const text = await extractTextFromPDF(fileBuffer);
@@ -73,10 +73,5 @@ export const processResume = async (resumeId: string) => {
     
 }
 
-const fileBuffer = await downloadResumeFile(
-          'resumes',
-          "fELPTDWswZVfCd14UYtWXqPZvSK2/ML_Thulana_Weerasekara.pdf"
-      );
-
-const text = await extractTextFromPDF(fileBuffer);
+const text = await processResume("2a79f473-b198-4df6-963f-33267713e0dc")
 console.log(text);
