@@ -1,7 +1,7 @@
 import { prisma } from "../utils/prisma.ts";
 import type { Request, Response } from "express";
 import { supabase } from "../utils/supabase.ts";
-//import { resumeQueue } from "../utils/queue.ts";
+import { resumeQueue } from "../utils/queue.ts";
 
 /**
  * POST /upload-intent
@@ -190,32 +190,24 @@ export const confirmUpload = async (req: Request, res: Response) => {
       },
     });
 
-    // Queue the bulk processing job
-    // const queueJob = await resumeQueue.add(
-    //   "processBulkResumes",
-    //   {
-    //     jobId,
-    //     resumeIds,
-    //     userId: user.id,
-    //   },
-    //   {
-    //     attempts: 3,
-    //     backoff: {
-    //       type: "exponential",
-    //       delay: 2000,
-    //     },
-    //   }
-    // );
-
-    // console.log(
-    //   `Queued bulk resume processing: Job=${jobId}, ResumesCount=${resumeIds.length}, QueueJobId=${queueJob.id}`
-    // );
+    await resumeQueue.addBulk(
+      resumeIds.map((resumeId) => ({
+        name: "process-resume",
+        data: { resumeId },
+        opts: {
+         // jobId: resumeId, // prevents duplicates
+          attempts: 3,
+          backoff: { type: "exponential", delay: 3000 },
+          removeOnComplete: true,
+          removeOnFail: false,
+        },
+      }))
+    );
 
     res.json({
       success: true,
       jobId,
       //queueJobId: queueJob.id,
-      processedCount: resumeIds.length,
     });
   } catch (error) {
     console.error("Upload confirm error:", error);

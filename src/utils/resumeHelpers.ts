@@ -56,6 +56,7 @@ export const processResume = async (resumeId: string) => {
       );
 
       const text = await extractTextFromPDF(fileBuffer);
+      console.log(text)
 
       //const embedding = await generateEmbedding(text);
 
@@ -73,5 +74,5 @@ export const processResume = async (resumeId: string) => {
     
 }
 
-const text = await processResume("2a79f473-b198-4df6-963f-33267713e0dc")
-console.log(text);
+// const text = await processResume("2a79f473-b198-4df6-963f-33267713e0dc")
+// console.log(text);

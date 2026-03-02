@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "description": "This is the backend of the AI powered resume screener.",
   "main": "index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "auth": "npx ts-node src/scripts/firebaseTest.ts",
+    "start": "npx ts-node src/server.ts",
+    "start:worker": "npx ts-node src/worker.ts"
   },
   "keywords": [],
   "author": "",
