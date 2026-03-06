@@ -181,12 +181,20 @@ export const confirmUpload = async (req: Request, res: Response) => {
       });
     }
 
+    const batch = await prisma.uploadBatch.create({
+      data: {
+        jobId,
+        totalResumes: resumeIds.length,
+      },
+    });
+
     // Update all resumes to UPLOADED
     await prisma.resume.updateMany({
       where: { id: { in: resumeIds } },
       data: {
         status: "UPLOADED",
         uploadedAt: new Date(),
+        batchId: batch.id,
       },
     });
 

@@ -70,6 +70,7 @@ export const processResume = async (resumeId: string) => {
       return text;
     } catch (error) {
       console.log("error:", error);
+      throw error;
     }
     
 }

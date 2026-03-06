@@ -38,10 +38,13 @@ model Resume {
 
   uploadedAt   DateTime?
   createdAt    DateTime @default(now())
+  batchId      String?
 
+  batch        UploadBatch? @relation(fields: [batchId], references: [id])
   job          Job      @relation(fields: [jobId], references: [id])
   parsed       ParsedResume?
   results      ScreeningResult[]
+   failures  BatchFailure[]
 }
 
 enum ResumeStatus {
@@ -52,6 +55,35 @@ enum ResumeStatus {
   READY
 }
 
+model UploadBatch {
+  id              String        @id @default(uuid())
+  jobId           String
+  totalResumes    Int
+  processedCount  Int           @default(0)
+  failedCount     Int           @default(0)
+  status          BatchStatus   @default(PROCESSING)
+  createdAt       DateTime      @default(now())
+  completedAt     DateTime?
+
+  resumes         Resume[]
+  failures        BatchFailure[]
+}
+
+model BatchFailure {
+  id        String   @id @default(uuid())
+  batchId   String
+  resumeId  String
+  reason    String
+  createdAt DateTime @default(now())
+
+  batch     UploadBatch @relation(fields: [batchId], references: [id])
+  resume    Resume      @relation(fields: [resumeId], references: [id])
+}
+
+enum BatchStatus {
+  PROCESSING
+  COMPLETED
+}
 
 model ParsedResume {
   id         String   @id @default(uuid())
