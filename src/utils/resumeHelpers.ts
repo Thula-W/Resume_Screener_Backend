@@ -84,19 +84,18 @@ export const processResume = async (resumeId: string) => {
       const text = await extractTextFromPDF(fileBuffer);
       console.log(text)
 
-      //const embedding = await generateEmbedding(text);
-
-      // await prisma.resume.update({
-      //     where: { id: resumeId },
-      //     data: {
-      //     //embedding,
-      //     status: "PARSED",
-      //     },
-      // });
       const json = await extractJson(text);
       console.log(json);
 
-
+      await prisma.resume.update({
+        where: { id: resumeId },
+        data: {
+        parsedJson: json,
+        status: "PARSED",
+        },
+      });
+      return json;
+      
     } catch (error) {
       console.log("error:", error);
       throw error;
@@ -108,4 +107,4 @@ export const processResume = async (resumeId: string) => {
 // const text = await processResume("8f55476f-a498-41b2-9ba1-adf0762329b1")
 const text =  await processResume("60061a06-c5eb-4e0c-bf35-207350f19b87")
 
-const sanitized = await extractJson(text);
+// const sanitized = await extractJson(text);

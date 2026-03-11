@@ -39,6 +39,7 @@ model Resume {
   uploadedAt   DateTime?
   createdAt    DateTime @default(now())
   batchId      String?
+  parsedJson   Json?
 
   batch        UploadBatch? @relation(fields: [batchId], references: [id])
   job          Job      @relation(fields: [jobId], references: [id])
