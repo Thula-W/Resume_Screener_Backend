@@ -10,12 +10,14 @@ export const JSON_STRUCTURE = `
       "type": "Professional",
       "role": "string",
       "organization": "string",
+      "timeframe": "string",
       "description": "string"
     },
     {
       "type": "Project",
       "name": "string",
       "role": "string",
+      "timeframe": "string",
       "organization": "sring",
       "description": "string"
     }
@@ -23,7 +25,7 @@ export const JSON_STRUCTURE = `
   "bio_bucket": {
     "summary": "string.",
     "education": [
-      { "qualifications": "string", "institution": "string", "honors": ["string"] }
+      { "qualifications": "string", "institution": "string", "honors": ["string"] , "timeframe": "string"}
     ],
     "extracurriculars": ["string"]
   }
@@ -38,8 +40,10 @@ You MUST return a JSON object that strictly follows this structure:
 ${JSON_STRUCTURE}
 
 Instructions:
-If a data point is missing return ''. 
+If data is not present in the text for a certain field, leave it as an empty string.
 Do not invent information.
+If you are uncertain about a data point, it is better to leave it blank than to guess.
+Include role and organisation for projects only if they are explicitly mentioned in the text. If not, leave empty string.
 Do not extract personal information and refernces.
 Analyze the provided resume text and map every relevant data point into one of the following three buckets. Follow the mapping logic strictly, especially for "Messy" sections.
 
