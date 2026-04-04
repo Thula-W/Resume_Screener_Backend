@@ -1,10 +1,12 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider  = "postgresql"
+  extensions = [pgvector(map: "vector")]
 }
         
 
@@ -24,6 +26,14 @@ model Job {
   description  String
   requirements Json?
   createdAt    DateTime @default(now())
+
+  // Embedding fields
+  skillsText       String?
+  bioText          String?
+  experienceText   String?
+  skillsEmbedding  Unsupported("vector(1536)")?
+  bioEmbedding     Unsupported("vector(1536)")?
+  experienceEmbedding Unsupported("vector(1536)")?
 
   user         User     @relation(fields: [userId], references: [id])
   resumes      Resume[]
@@ -46,6 +56,7 @@ model Resume {
   parsed       ParsedResume?
   results      ScreeningResult[]
    failures  BatchFailure[]
+  embeddings   ResumeEmbedding[]
 }
 
 enum ResumeStatus {
@@ -86,6 +97,12 @@ enum BatchStatus {
   COMPLETED
 }
 
+enum BucketType {
+  SKILLS
+  BIO
+  EXPERIENCE
+}
+
 model ParsedResume {
   id         String   @id @default(uuid())
   resumeId   String   @unique
@@ -94,6 +111,17 @@ model ParsedResume {
   createdAt  DateTime @default(now())
 
   resume     Resume   @relation(fields: [resumeId], references: [id])
+}
+
+model ResumeEmbedding {
+  id         String     @id @default(uuid())
+  resumeId   String
+  bucket     BucketType
+  text       String
+  embedding  Unsupported("vector(1536)")
+  createdAt  DateTime   @default(now())
+
+  resume     Resume     @relation(fields: [resumeId], references: [id])
 }
 
 model ScreeningResult {

@@ -3,6 +3,7 @@ import {prisma} from "./prisma.ts";
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { openAiClient } from "./openai.ts";
 import { systemPrompt, JSON_STRUCTURE } from "../prompts/parse.prompts.ts";
+import { resumeEmbeddingsQueue } from "./queue.ts";
 
 // ---------- helpers --------------------------------
 const extractTextFromPDF = async (buffer: Buffer) => {
@@ -141,6 +142,12 @@ export const processResume = async (resumeId: string) => {
       //   },
       // });
       const bucketTexts = convertJsonToText(JSON.parse(json));
+
+      // await resumeEmbeddingsQueue.add("process-resume-embeddings", {
+      //   resumeId,
+      //   buckets: bucketTexts,
+      // });
+
       return bucketTexts;
       
     } catch (error) {
@@ -151,8 +158,8 @@ export const processResume = async (resumeId: string) => {
 }
 
 
-const text = await processResume("8f55476f-a498-41b2-9ba1-adf0762329b1")
-// const text =  await processResume("60061a06-c5eb-4e0c-bf35-207350f19b87")
+const text = await processResume("00f19276-6735-486f-96d2-03e8b6e44ea9")
+
 console.log(text);
 // const sanitized = await extractJson(text);
 

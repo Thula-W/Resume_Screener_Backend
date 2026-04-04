@@ -1,10 +1,16 @@
 import "dotenv/config";
-import { startResumeWorker } from "./utils/workerUtils.ts";
+import { startResumeWorker, startResumeEmbeddingsWorker, startJobEmbeddingsWorker } from "./utils/workerUtils.ts";
 
 const start = async () => {
   try {
     await startResumeWorker();
     console.log("✓ Resume worker started");
+
+    await startResumeEmbeddingsWorker();
+    console.log("✓ Resume embeddings worker started");
+
+    await startJobEmbeddingsWorker();
+    console.log("✓ Job embeddings worker started");
   } catch (error) {
     console.error("Worker failed:", error);
     process.exit(1);

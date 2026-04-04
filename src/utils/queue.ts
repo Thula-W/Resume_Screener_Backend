@@ -11,7 +11,17 @@ export const resumeQueue = new Queue("resume-queue", {
   connection: redisConnection,
 });
 
+export const resumeEmbeddingsQueue = new Queue("resume-embeddings-queue", {
+  connection: redisConnection,
+});
+
+export const jobEmbeddingsQueue = new Queue("job-embeddings-queue", {
+  connection: redisConnection,
+});
+
 export const closeQueue = async () => {
   await resumeQueue.close();
+  await resumeEmbeddingsQueue.close();
+  await jobEmbeddingsQueue.close();
   await redisConnection.quit();
 };
