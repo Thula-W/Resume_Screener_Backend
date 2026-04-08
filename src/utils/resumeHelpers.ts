@@ -158,9 +158,9 @@ export const processResume = async (resumeId: string) => {
 }
 
 
-const text = await processResume("00f19276-6735-486f-96d2-03e8b6e44ea9")
+//const text = await processResume("00f19276-6735-486f-96d2-03e8b6e44ea9")
 
-console.log(text);
+//console.log(text);
 // const sanitized = await extractJson(text);
 
 const t = {

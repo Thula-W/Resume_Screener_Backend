@@ -23,8 +23,8 @@ model Job {
   id           String   @id @default(uuid())
   userId       String
   title        String
-  description  String
-  requirements Json?
+  overview     String?
+  constraints  String?
   createdAt    DateTime @default(now())
 
   // Embedding fields

@@ -62,8 +62,7 @@ export const startJobEmbeddingsWorker = async () => {
     "job-embeddings-queue",
     async (job) => {
       const data = job.data;
-
-      console.log(`Processing job embedding ${data.jobId}, bucket: ${data.bucketType}`);
+      console.log(`Processing job embedding ${data.jobId}`);
 
       await processJobEmbedding(data);
     },
