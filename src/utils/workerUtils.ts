@@ -11,11 +11,11 @@ export const startResumeWorker = async () => {
   resumeWorker = new Worker(
     "resume-queue",
     async (job) => {
-      const { resumeId } = job.data;
+      const { resumeId, constraints } = job.data;
 
       console.log(`Processing resume ${resumeId}`);
 
-      await processResume(resumeId);
+      await processResume(resumeId, constraints);
     },
     {
       connection: redisConnection,

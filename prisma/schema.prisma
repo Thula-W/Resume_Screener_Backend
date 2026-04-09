@@ -24,7 +24,7 @@ model Job {
   userId       String
   title        String
   overview     String?
-  constraints  String?
+  constraints  Json?
   createdAt    DateTime @default(now())
 
   // Embedding fields
@@ -55,7 +55,7 @@ model Resume {
   job          Job      @relation(fields: [jobId], references: [id])
   parsed       ParsedResume?
   results      ScreeningResult[]
-   failures  BatchFailure[]
+  failures  BatchFailure[]
   embeddings   ResumeEmbedding[]
 }
 
@@ -65,6 +65,7 @@ enum ResumeStatus {
   PARSED
   EMBEDDED
   READY
+  DISQUALIFIED
 }
 
 model UploadBatch {

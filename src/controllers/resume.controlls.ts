@@ -198,10 +198,11 @@ export const confirmUpload = async (req: Request, res: Response) => {
       },
     });
 
+    const constraints = job.constraints;
     await resumeQueue.addBulk(
       resumeIds.map((resumeId) => ({
         name: "process-resume",
-        data: { resumeId },
+        data: { resumeId, constraints },
         opts: {
          // jobId: resumeId, // prevents duplicates
           attempts: 3,

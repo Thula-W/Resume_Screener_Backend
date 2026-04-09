@@ -28,6 +28,12 @@ export const JSON_STRUCTURE = `
       { "qualifications": "string", "institution": "string", "honors": ["string"] , "timeframe": "string"}
     ],
     "extracurriculars": ["string"]
+  },
+  attributes_bucket:{
+    "yearsOfExperience": number,
+    "education": string,
+    "languages": string[],
+    "certifications": string[]
   }
 }`;
 
@@ -70,5 +76,29 @@ Education: Map Degree names and Universities (e.g., "BS in Computer Science from
 Honors: Map academic honors like "Dean’s List" or "Summa Cum Laude."
 Extracurriculars: Map leadership roles or club involvements to define personality.
 
+4 attributes bucket:
+Rules:
+- yearsOfExperience:
+  - Identify all full-time professional roles with start and end dates
+  - Calculate total experience in MONTHS (ignore overlaps if possible)
+  - Convert to years using: years = months / 12
+  - Return a decimal number rounded to 1 decimal place (e.g., 2.4, 0.8)
+  - If only years are mentioned (no months), estimate reasonably
+  - If unclear or no experience, return 0
+
+- education:
+  - Normalize to one of: "high_school", "bachelors", "masters", "phd", "diploma"
+  - Choose the HIGHEST level only
+  - If unclear, return ""
+
+- languages:
+  - Extract spoken languages only (not programming languages)
+  - Return lowercase values (e.g., "english", "japanese")
+  - If none found, return []
+
+- certifications:
+  - Extract formal certifications only (e.g., AWS, Google Cloud, PMP)
+  - Return lowercase strings
+  - If none found, return []
 Below is the raw resume text:
-    `;
+`;
