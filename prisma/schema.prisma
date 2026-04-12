@@ -131,11 +131,13 @@ model ScreeningResult {
   jobId            String
   skillScore       Float
   experienceScore  Float
-  semanticScore    Float
+  bioScore         Float
   finalScore       Float
-  explanation      String
+  rerankedScore    Float?
+  explanation      String?
   modelVersion     String
   createdAt        DateTime @default(now())
 
   resume           Resume   @relation(fields: [resumeId], references: [id])
+  @@unique([resumeId, jobId])
 }
