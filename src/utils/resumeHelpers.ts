@@ -6,7 +6,7 @@ import { systemPrompt, JSON_STRUCTURE } from "../prompts/parse.prompts.ts";
 import { resumeEmbeddingsQueue } from "./queue.ts";
 
 // ---------- helpers --------------------------------
-const extractTextFromPDF = async (buffer: Buffer) => {
+export const extractTextFromPDF = async (buffer: Buffer) => {
   const uint8Array = new Uint8Array(buffer);
   const pdf = await pdfjs.getDocument({ data: uint8Array }).promise;
   let text = "";
@@ -43,7 +43,7 @@ const downloadResumeFile = async (
   return Buffer.from(arrayBuffer);
 };
 
-const extractJson = async (text: string) => {
+export const extractJson = async (text: string) => {
 
     const response = await openAiClient.chat.completions.create({
       model: "gpt-4o-mini",
@@ -65,7 +65,7 @@ const extractJson = async (text: string) => {
     return json;
 }
 
-function convertJsonToText(data): { bio: string; experience: string; skills: string, attributes:constraints } {
+export const convertJsonToText = (data: any): { bio: string; experience: string; skills: string, attributes: any } => {
   // 1. Process Bio
   const bioLines: string[] = [];
   const bio = data.bio_bucket;
@@ -162,6 +162,24 @@ function checkHardConstraints(candidate: constraints, constraints: constraints):
 
   return true;
 }
+
+export const combineResumeText = (data: {
+  bio: string;
+  experience: string;
+  skills: string;
+}) => {
+  return `
+BIO:
+${data.bio}
+
+EXPERIENCE:
+${data.experience}
+
+SKILLS:
+${data.skills}
+  `.trim();
+};
+
 
 //----------------------------------------------------------
 export const processResume = async (resumeId: string, constraints) => {

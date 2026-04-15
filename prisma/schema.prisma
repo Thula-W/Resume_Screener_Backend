@@ -37,6 +37,7 @@ model Job {
 
   user         User     @relation(fields: [userId], references: [id])
   resumes      Resume[]
+  evaluations  Evaluations[]
 }
 
 model Resume {
@@ -140,4 +141,14 @@ model ScreeningResult {
 
   resume           Resume   @relation(fields: [resumeId], references: [id])
   @@unique([resumeId, jobId])
+}
+
+model Evaluations {
+  id         String   @id @default(uuid())
+  jobId      String   
+  rawText    String
+  verdict    String
+  createdAt  DateTime @default(now())
+
+  job          Job      @relation(fields: [jobId], references: [id])
 }
