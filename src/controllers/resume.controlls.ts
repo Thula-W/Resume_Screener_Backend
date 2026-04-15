@@ -181,6 +181,13 @@ export const confirmUpload = async (req: Request, res: Response) => {
       });
     }
 
+    await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        resumeCount: resumeIds.length, // Set the total number of resumes for this job
+      },
+    });
+
     const batch = await prisma.uploadBatch.create({
       data: {
         jobId,
