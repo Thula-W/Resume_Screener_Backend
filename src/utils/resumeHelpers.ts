@@ -208,13 +208,14 @@ export const processResume = async (resumeId: string, constraints) => {
       const bucketTexts = convertJsonToText(JSON.parse(json));
 
       const { attributes, ...restBuckets } = bucketTexts;
+      const content = combineResumeText(restBuckets);
       const qualified = checkHardConstraints(attributes, constraints);
       const status = qualified ? "PARSED" : "DISQUALIFIED";
 
       await prisma.resume.update({
         where: { id: resumeId },
         data: {
-          parsedJson: json,
+          content: content,
           status: status
         },
       });

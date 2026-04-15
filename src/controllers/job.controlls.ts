@@ -89,7 +89,6 @@ const parseEvaluationRequest = async (
 
 const processEvaluations = async (req: AddEvaluationsRequest): Promise<void> => {
   const { jobId, pairs } = req;
-  console.log("aaa")
 
   if (!jobId) throw new Error("jobId is required.");
   if (!pairs?.length) throw new Error("At least one CV+verdict pair is required.");
