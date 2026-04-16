@@ -1,6 +1,7 @@
 import { prisma } from "../prisma.ts";
 import { openAiClient } from "../openai.ts";
 
+const ANCHOR_BATCH_SIZE = 7;
 
 function calculateTopN(totalResumes: number): number {
     const n = Math.ceil(totalResumes * 0.1);
@@ -20,7 +21,6 @@ async function fetchTopScreeningResults(jobId: string, topN: number) {
   });
 }
 
-
 async function fetchEvaluationsForJob(
   jobId: string
 ): Promise<{ rawText: string; verdict: string }[]> {
@@ -33,13 +33,12 @@ async function fetchEvaluationsForJob(
 
 async function fetchJobMetadata(
   jobId: string
-): Promise<{ title: string; overview: string | null } | null> {
+): Promise<{ title: string; overview: string | null; bioText: string | null; skillsText: string | null; experienceText: string | null } | null> {
   return prisma.job.findUnique({
     where: { id: jobId },
     select: { title: true, overview: true, bioText: true , skillsText: true, experienceText: true},
   });
 }
-
 
 function buildBatchedRerankerPrompt(
   jobData: { title: string; overview: string | null; bioText: string | null; skillsText: string | null; experienceText: string | null },
@@ -254,8 +253,105 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+function selectAnchors(
+  topResults: { resumeId: string; id: string; finalScore: number }[]
+): { resumeId: string; id: string; finalScore: number }[] {
+  const sorted = [...topResults].sort((a, b) => b.finalScore - a.finalScore);
+  const highAnchor = sorted[0];
+  const midAnchor = sorted[Math.floor((sorted.length - 1) / 2)];
+  const lowAnchor = sorted[sorted.length - 1];
+  return [highAnchor, midAnchor, lowAnchor];
+}
+
+function separateAnchorsFromCandidates(
+  candidates: { resumeId: string; content: string }[],
+  anchorIds: Set<string>
+): {
+  anchorCandidates: { resumeId: string; content: string }[];
+  regularCandidates: { resumeId: string; content: string }[];
+} {
+  return {
+    anchorCandidates: candidates.filter((c) => anchorIds.has(c.resumeId)),
+    regularCandidates: candidates.filter((c) => !anchorIds.has(c.resumeId)),
+  };
+}
+
+function computeAverageAnchorScores(
+  anchorScoresPerBatch: { resumeId: string; score: number }[][]
+): Map<string, number> {
+  const scoreAccumulator = new Map<string, number[]>();
+
+  for (const batchScores of anchorScoresPerBatch) {
+    for (const { resumeId, score } of batchScores) {
+      if (!scoreAccumulator.has(resumeId)) {
+        scoreAccumulator.set(resumeId, []);
+      }
+      scoreAccumulator.get(resumeId)!.push(score);
+    }
+  }
+
+  const averages = new Map<string, number>();
+  for (const [resumeId, scores] of scoreAccumulator.entries()) {
+    averages.set(resumeId, scores.reduce((a, b) => a + b, 0) / scores.length);
+  }
+
+  return averages;
+}
+
+function normalizeBatchScores(
+  batchResults: { resumeId: string; score: number; explanation: string }[],
+  anchorIds: { high: string; mid: string; low: string },
+  globalAnchorAverages: Map<string, number>
+): { resumeId: string; score: number; explanation: string }[] {
+  const actualHigh = batchResults.find((r) => r.resumeId === anchorIds.high)?.score ?? null;
+  const actualLow = batchResults.find((r) => r.resumeId === anchorIds.low)?.score ?? null;
+
+  const expectedHigh = globalAnchorAverages.get(anchorIds.high) ?? null;
+  const expectedLow = globalAnchorAverages.get(anchorIds.low) ?? null;
+
+  // If anchors are missing or range is zero, return raw scores clamped
+  if (
+    actualHigh === null ||
+    actualLow === null ||
+    expectedHigh === null ||
+    expectedLow === null ||
+    actualHigh === actualLow
+  ) {
+    return batchResults.map((r) => ({
+      ...r,
+      score: Math.min(1.0, Math.max(0.0, r.score)),
+    }));
+  }
+
+  const scale = (expectedHigh - expectedLow) / (actualHigh - actualLow);
+
+  return batchResults.map((r) => {
+    const normalized = expectedLow + (r.score - actualLow) * scale;
+    return {
+      ...r,
+      score: Math.min(1.0, Math.max(0.0, normalized)),
+    };
+  });
+}
+
+function buildFinalResults(
+  normalizedCandidateResults: { resumeId: string; score: number; explanation: string }[],
+  anchorExplanations: Map<string, string>,
+  globalAnchorAverages: Map<string, number>
+): { resumeId: string; score: number; explanation: string }[] {
+  const anchorResults = Array.from(globalAnchorAverages.entries()).map(
+    ([resumeId, score]) => ({
+      resumeId,
+      score,
+      explanation: anchorExplanations.get(resumeId) ?? "",
+    })
+  );
+
+  return [...normalizedCandidateResults, ...anchorResults];
+}
+
 // ─────────────────────────────────────────────
-// MAIN: Reranks using a single batched LLM call
+// MAIN: Rerank — single call if topN <= 10, anchored batches if topN > 10
 // ─────────────────────────────────────────────
 export async function rerankResumesForJob(jobId: string): Promise<void> {
   const jobData = await fetchJobMetadata(jobId);
@@ -287,25 +383,91 @@ export async function rerankResumesForJob(jobId: string): Promise<void> {
     topResults.map((r) => [r.resumeId, r.id])
   );
 
-  // Split candidates into chunks of 5
-  const chunks = chunkArray(candidates, 5);
-  console.log(`Split into ${chunks.length} chunks of up to 5 resumes each`);
+  let allResults: { resumeId: string; score: number; explanation: string }[];
 
-  const allLlmResults = [];
+  if (topN <= ANCHOR_BATCH_SIZE+3) {
+    // ─── Single call, no anchoring needed ───
+    console.log(`topN=${topN} ≤ ${ANCHOR_BATCH_SIZE+3} → single LLM call`);
+    const prompt = buildBatchedRerankerPrompt(jobData, evaluations, candidates);
+    allResults = await callBatchedRerankerLLM(prompt);
+  } else {
+    // ─── Anchored batching ───
+    console.log(`topN=${topN} > ${ANCHOR_BATCH_SIZE+3} → anchored batch calls`);
 
-  for (const chunk of chunks) {
-    const prompt = buildBatchedRerankerPrompt(
-      jobData,
-      evaluations,
-      chunk
+    const anchors = selectAnchors(topResults);
+    const [highAnchor, midAnchor, lowAnchor] = anchors;
+    const anchorIds = new Set(anchors.map((a) => a.resumeId));
+
+    const { anchorCandidates, regularCandidates } = separateAnchorsFromCandidates(
+      candidates,
+      anchorIds
     );
 
-    const chunkResults = await callBatchedRerankerLLM(prompt);
-    allLlmResults.push(...chunkResults);
+    const anchorIdMap = {
+      high: highAnchor.resumeId,
+      mid: midAnchor.resumeId,
+      low: lowAnchor.resumeId,
+    };
+
+    const chunks = chunkArray(regularCandidates, ANCHOR_BATCH_SIZE);
+    console.log(`${regularCandidates.length} regular candidates → ${chunks.length} batches of up to ${ANCHOR_BATCH_SIZE}`);
+
+    const anchorScoresPerBatch: { resumeId: string; score: number }[][] = [];
+    const rawCandidateResults: { resumeId: string; score: number; explanation: string }[] = [];
+    const anchorExplanations = new Map<string, string>();
+
+    for (const chunk of chunks) {
+      const batchCandidates = [...anchorCandidates, ...chunk];
+      const prompt = buildBatchedRerankerPrompt(jobData, evaluations, batchCandidates);
+      const batchResults = await callBatchedRerankerLLM(prompt);
+
+      const batchAnchorScores = batchResults
+        .filter((r) => anchorIds.has(r.resumeId))
+        .map((r) => ({ resumeId: r.resumeId, score: r.score }));
+
+      for (const anchorResult of batchResults.filter((r) => anchorIds.has(r.resumeId))) {
+        anchorExplanations.set(anchorResult.resumeId, anchorResult.explanation);
+      }
+
+      anchorScoresPerBatch.push(batchAnchorScores);
+      rawCandidateResults.push(...batchResults.filter((r) => !anchorIds.has(r.resumeId)));
+    }
+
+    const globalAnchorAverages = computeAverageAnchorScores(anchorScoresPerBatch);
+
+    // Normalize each batch slice
+    const normalizedResults: { resumeId: string; score: number; explanation: string }[] = [];
+    let candidateIndex = 0;
+
+    for (const batchAnchorScores of anchorScoresPerBatch) {
+      const batchSlice = rawCandidateResults.slice(
+        candidateIndex,
+        candidateIndex + ANCHOR_BATCH_SIZE
+      );
+
+      const batchResultsWithAnchors = [
+        ...batchAnchorScores.map((a) => ({
+          resumeId: a.resumeId,
+          score: a.score,
+          explanation: anchorExplanations.get(a.resumeId) ?? "",
+        })),
+        ...batchSlice,
+      ];
+
+      const normalized = normalizeBatchScores(
+        batchResultsWithAnchors,
+        anchorIdMap,
+        globalAnchorAverages
+      );
+
+      normalizedResults.push(...normalized.filter((r) => !anchorIds.has(r.resumeId)));
+      candidateIndex += ANCHOR_BATCH_SIZE;
+    }
+
+    allResults = buildFinalResults(normalizedResults, anchorExplanations, globalAnchorAverages);
   }
 
-
-  const toSave = allLlmResults
+  const toSave = allResults
     .filter((r) => resumeIdToScreeningId[r.resumeId])
     .map((r) => ({
       screeningResultId: resumeIdToScreeningId[r.resumeId],
@@ -314,9 +476,71 @@ export async function rerankResumesForJob(jobId: string): Promise<void> {
     }));
 
   await saveAllRerankedResults(toSave);
-
   console.log(`Reranking complete for job ${jobId}. Scored ${toSave.length} resumes.`);
 }
+// ─────────────────────────────────────────────
+// MAIN: Reranks using a single batched LLM call
+// ─────────────────────────────────────────────
+// export async function rerankResumesForJob(jobId: string): Promise<void> {
+//   const jobData = await fetchJobMetadata(jobId);
+//   if (!jobData) throw new Error(`Job not found: ${jobId}`);
+
+//   const job = await prisma.job.findUnique({
+//     where: { id: jobId },
+//     select: { resumeCount: true },
+//   });
+
+//   const totalResumes = job?.resumeCount ?? 0;
+//   const topN = calculateTopN(totalResumes);
+//   console.log(`Total resumes: ${totalResumes} → Reranking top ${topN}`);
+
+//   const [evaluations, topResults] = await Promise.all([
+//     fetchEvaluationsForJob(jobId),
+//     fetchTopScreeningResults(jobId, topN),
+//   ]);
+
+//   const resumeIds = topResults.map((r) => r.resumeId);
+//   const candidates = await fetchResumeContents(resumeIds);
+
+//   if (candidates.length === 0) {
+//     console.warn(`No resume content available for job ${jobId}`);
+//     return;
+//   }
+
+//   const resumeIdToScreeningId = Object.fromEntries(
+//     topResults.map((r) => [r.resumeId, r.id])
+//   );
+
+//   // Split candidates into chunks of 5
+//   const chunks = chunkArray(candidates, 5);
+//   console.log(`Split into ${chunks.length} chunks of up to 5 resumes each`);
+
+//   const allLlmResults = [];
+
+//   for (const chunk of chunks) {
+//     const prompt = buildBatchedRerankerPrompt(
+//       jobData,
+//       evaluations,
+//       chunk
+//     );
+
+//     const chunkResults = await callBatchedRerankerLLM(prompt);
+//     allLlmResults.push(...chunkResults);
+//   }
+
+
+//   const toSave = allLlmResults
+//     .filter((r) => resumeIdToScreeningId[r.resumeId])
+//     .map((r) => ({
+//       screeningResultId: resumeIdToScreeningId[r.resumeId],
+//       rerankedScore: r.score,
+//       explanation: r.explanation,
+//     }));
+
+//   await saveAllRerankedResults(toSave);
+
+//   console.log(`Reranking complete for job ${jobId}. Scored ${toSave.length} resumes.`);
+// }
 
 await rerankResumesForJob("68722bb7-0d26-4a6e-bd19-edb334c25a68")
 
