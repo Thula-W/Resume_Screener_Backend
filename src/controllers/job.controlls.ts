@@ -2,7 +2,8 @@ import type { Request, Response } from "express";
 import { prisma } from "../utils/prisma.ts";
 import { jobEmbeddingsQueue } from "../utils/queue.ts";
 import { combineResumeText, convertJsonToText, extractJson, extractTextFromPDF } from "../utils/resumeHelpers.ts";
-import {AddEvaluationsRequest} from "../types.ts"
+import type {AddEvaluationsRequest} from "../types.ts"
+import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers.ts";
 
 export const addJob = async (req: Request, res: Response) => {
   const { title, overview, skills, bio, experience, constraints } = req.body ?? {};
@@ -35,12 +36,18 @@ export const addJob = async (req: Request, res: Response) => {
       },
     });
 
-    await jobEmbeddingsQueue.add("process-job-embeddings", {
-      jobId: job.id,
-      skills,
-      bio,
-      experience,
-    });
+    withRetry(() => processJobEmbedding({ jobId: job.id, skills, bio, experience })).catch((err) =>
+      console.error(`Embedding failed for job ${job.id}:`, err)
+    );
+
+
+    //------- redis que approach--------------------
+    // await jobEmbeddingsQueue.add("process-job-embeddings", {
+    //   jobId: job.id,
+    //   skills,
+    //   bio,
+    //   experience,
+    // });
     
     res.status(201).json(job);
   } catch (err) {

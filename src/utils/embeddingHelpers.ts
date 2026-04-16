@@ -2,6 +2,18 @@ import { openAiClient } from "./openai.ts";
 import { prisma } from "./prisma.ts";
 import { v4 as uuidv4 } from "uuid";
 
+
+export const withRetry = async (fn: () => Promise<void>, retries = 3) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === retries - 1) console.error("All retries failed:", err);
+      else await new Promise((r) => setTimeout(r, 1000 * 2 ** i)); // exponential backoff
+    }
+  }
+};
+
 export const generateEmbedding = async (text: string): Promise<number[]> => {
   const response = await openAiClient.embeddings.create({
     model: "text-embedding-3-small",
