@@ -7,7 +7,7 @@ import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers.ts";
 
 export const addJob = async (req: Request, res: Response) => {
   const { title, overview, skills, bio, experience, constraints } = req.body ?? {};
-  const firebaseUid = (req as any).user?.firebaseUid;
+  const firebaseUid = (req as any).user?.id;
 
   if (!firebaseUid) {
     return res.status(401).json({ error: "Unauthorized" });

@@ -22,7 +22,7 @@ import { resumeQueue } from "../utils/queue.ts";
  */
 export const uploadIntent = async (req: Request, res: Response) => {
   try {
-    const firebaseUid = req.user.firebaseUid;
+    const firebaseUid = req.user.id;
     const { jobId, files } = req.body;
 
     if (!jobId) {
@@ -130,7 +130,7 @@ export const uploadIntent = async (req: Request, res: Response) => {
  */
 export const confirmUpload = async (req: Request, res: Response) => {
   try {
-    const firebaseUid = req.user.firebaseUid;
+    const firebaseUid = req.user.id;
     const { jobId, resumes } = req.body;
 
     if (!jobId || !resumes || !Array.isArray(resumes) || resumes.length === 0) {

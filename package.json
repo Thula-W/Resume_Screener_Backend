@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "auth": "npx ts-node src/scripts/firebaseTest.ts",
+    "auth": "npx ts-node src/scripts/supabaseAuth.ts",
     "start": "npx ts-node src/server.ts",
     "start:worker": "npx ts-node src/worker.ts"
   },
