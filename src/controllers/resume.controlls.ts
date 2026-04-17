@@ -1,7 +1,9 @@
 import { prisma } from "../config/prisma.ts";
 import type { Request, Response } from "express";
-import { supabase } from "../config/supabase.ts";
+import { r2 } from "../config/r2.ts";
 import { resumeQueue } from "../utils/queue.ts";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 /**
  * POST /upload-intent
@@ -78,18 +80,20 @@ export const uploadIntent = async (req: Request, res: Response) => {
         });
 
         // Generate signed URL (2 hour expiry)
-        const { data, error: urlError } = await supabase.storage
-          .from("resumes")
-          .createSignedUploadUrl(storagePath);
-
-        if (urlError) {
-          throw new Error(`Failed to generate signed URL: ${urlError.message}`);
-        }
+        const signedUrl = await getSignedUrl(
+          r2,
+          new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: storagePath,
+            ContentType: "application/pdf",
+          }),
+          { expiresIn: 60*60*2 }
+        );
 
         return {
           resumeId: resume.id,
           storagePath: storagePath,
-          signedUrl: data?.signedUrl,
+          signedUrl: signedUrl,
           expiresIn: 60 * 60 * 2, // 2 hours in seconds
         };
       })
