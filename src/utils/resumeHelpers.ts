@@ -1,7 +1,7 @@
-import { supabase } from "./supabase.ts";
-import {prisma} from "./prisma.ts";
+import { supabase } from "../config/supabase.ts";
+import {prisma} from "../config/prisma.ts";
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { openAiClient } from "./openai.ts";
+import { openAiClient } from "../config/openai.ts";
 import { systemPrompt, JSON_STRUCTURE } from "../prompts/parse.prompts.ts";
 import { resumeEmbeddingsQueue } from "./queue.ts";
 

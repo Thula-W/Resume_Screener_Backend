@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { prisma } from "../utils/prisma.ts";
+import { prisma } from "../config/prisma.ts";
 import { jobEmbeddingsQueue } from "../utils/queue.ts";
 import { combineResumeText, convertJsonToText, extractJson, extractTextFromPDF } from "../utils/resumeHelpers.ts";
 import type {AddEvaluationsRequest} from "../types.ts"

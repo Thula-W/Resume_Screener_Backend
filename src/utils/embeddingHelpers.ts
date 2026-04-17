@@ -1,5 +1,5 @@
-import { openAiClient } from "./openai.ts";
-import { prisma } from "./prisma.ts";
+import { openAiClient } from "../config/openai.ts";
+import { prisma } from "../config/prisma.ts";
 import { v4 as uuidv4 } from "uuid";
 
 

@@ -1,5 +1,5 @@
-import { prisma } from "../prisma.ts";
-import { openAiClient } from "../openai.ts";
+import { prisma } from "../../config/prisma.ts";
+import { openAiClient } from "../../config/openai.ts";
 
 const ANCHOR_BATCH_SIZE = 7;
 

@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { prisma } from "../utils/prisma.ts";
+import { prisma } from "../config/prisma.ts";
 
 export const getMe = async (req: Request, res: Response) => {
   const { id, email } = req.user!;

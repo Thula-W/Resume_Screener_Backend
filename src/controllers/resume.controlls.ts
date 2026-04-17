@@ -1,6 +1,6 @@
-import { prisma } from "../utils/prisma.ts";
+import { prisma } from "../config/prisma.ts";
 import type { Request, Response } from "express";
-import { supabase } from "../utils/supabase.ts";
+import { supabase } from "../config/supabase.ts";
 import { resumeQueue } from "../utils/queue.ts";
 
 /**

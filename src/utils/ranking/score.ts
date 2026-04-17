@@ -17,7 +17,7 @@
  *   @@unique([resumeId, jobId])
  */
 
-import {prisma} from "../prisma.ts"
+import {prisma} from "../../config/prisma.ts"
 
 // ---------------------------------------------------------------------------
 // Config

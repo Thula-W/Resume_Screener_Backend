@@ -1,4 +1,4 @@
-import {prisma} from "../utils/prisma.ts";
+import {prisma} from "../config/prisma.ts";
 
 const user = await prisma.user.create({
   data: {
