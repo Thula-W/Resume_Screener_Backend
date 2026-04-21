@@ -11,9 +11,10 @@ class_name = "MyBackendContainer"
 tag = "v1"
 new_sqlite_classes = ["MyBackendContainer"]
 
-[containers]
-image = "./Dockerfile"
+[[containers]]
+name = "my_backend"
+class_name = "MyBackendContainer"
+image = "../Resume_Screener_Backend/Dockerfile"
 
 [vars]
-SUPABASE_URL = "https://pclxixdtdfelqpikdarx.supabase.co"
 NODE_ENV = "production"
