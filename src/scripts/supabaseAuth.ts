@@ -1,4 +1,4 @@
-import { supabaseAuth } from "../config/supabase.ts";
+import { supabaseAuth } from "../config/supabase";
 
 async function main() {
   const { data, error } = await supabaseAuth.auth.signInWithPassword({

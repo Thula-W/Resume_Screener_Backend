@@ -1,9 +1,10 @@
-import { prisma } from "../config/prisma.ts";
+import { prisma } from "../config/prisma";
 import type { Request, Response } from "express";
-import { r2 } from "../config/r2.ts";
-import { resumeQueue } from "../utils/queue.ts";
+import { r2 } from "../config/r2";
+import { resumeQueue } from "../utils/queue";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { AuthRequest } from "../middleware/auth";
 
 /**
  * POST /upload-intent
@@ -22,9 +23,9 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
  *   constraints: { maxSizeMB, allowedTypes }
  * }
  */
-export const uploadIntent = async (req: Request, res: Response) => {
+export const uploadIntent = async (req: AuthRequest, res: Response) => {
   try {
-    const firebaseUid = req.user.id;
+    const firebaseUid = req.user?.id;
     const { jobId, files } = req.body;
 
     if (!jobId) {
@@ -132,9 +133,9 @@ export const uploadIntent = async (req: Request, res: Response) => {
  *   processedCount: number
  * }
  */
-export const confirmUpload = async (req: Request, res: Response) => {
+export const confirmUpload = async (req: AuthRequest, res: Response) => {
   try {
-    const firebaseUid = req.user.id;
+    const firebaseUid = req.user?.id;
     const { jobId, resumes } = req.body;
 
     if (!jobId || !resumes || !Array.isArray(resumes) || resumes.length === 0) {

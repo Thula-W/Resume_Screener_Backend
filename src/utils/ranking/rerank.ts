@@ -1,5 +1,5 @@
-import { prisma } from "../../config/prisma.ts";
-import { openAiClient } from "../../config/openai.ts";
+import { prisma } from "../../config/prisma";
+import { openAiClient } from "../../config/openai";
 
 const ANCHOR_BATCH_SIZE = 7;
 
@@ -542,5 +542,11 @@ export async function rerankResumesForJob(jobId: string): Promise<void> {
 //   console.log(`Reranking complete for job ${jobId}. Scored ${toSave.length} resumes.`);
 // }
 
-await rerankResumesForJob("68722bb7-0d26-4a6e-bd19-edb334c25a68")
 
+
+const start = async () => {
+  const result = await rerankResumesForJob("68722bb7-0d26-4a6e-bd19-edb334c25a68");
+  // rest of your startup code
+};
+
+start();

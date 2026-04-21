@@ -1,9 +1,9 @@
 import express from "express";
 import cors from "cors";
 
-import userRoutes from "./routes/userRoutes.ts";
-import resumeRoutes from "./routes/resumeRoutes.ts";
-import jobRoutes from "./routes/jobRoutes.ts";
+import userRoutes from "./routes/userRoutes";
+import resumeRoutes from "./routes/resumeRoutes";
+import jobRoutes from "./routes/jobRoutes";
 
 const app = express();
 

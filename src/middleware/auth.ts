@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
-import { supabaseAuth } from "../config/supabase.ts";
-// import admin from "../config/firebase.ts";
+import { supabaseAuth } from "../config/supabase";
+// import admin from "../config/firebase";
 
 export interface AuthRequest extends Request {
   headers: any;

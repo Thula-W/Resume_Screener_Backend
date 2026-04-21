@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
-import { redisConnection } from "./queue.ts";
-import { processResume } from "./resumeHelpers.ts";
-import { processResumeEmbeddings, processJobEmbedding } from "./embeddingHelpers.ts";
+import { redisConnection } from "./queue";
+import { processResume } from "./resumeHelpers";
+import { processResumeEmbeddings, processJobEmbedding } from "./embeddingHelpers";
 
 let resumeWorker: Worker;
 let resumeEmbeddingsWorker: Worker;

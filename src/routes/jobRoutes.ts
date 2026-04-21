@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { authenticate } from "../middleware/auth.ts";
+import { authenticate } from "../middleware/auth";
 
-import { addJob, addEvaluations } from "../controllers/job.controlls.ts";
-import { upload } from "../middleware/multer.ts";
+import { addJob, addEvaluations } from "../controllers/job.controlls";
+import { upload } from "../middleware/multer";
 
 const router = Router();
 

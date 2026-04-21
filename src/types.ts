@@ -1,11 +1,11 @@
-interface constraints{
+export interface constraints{
     yearsOfExperience: number,
     education: string,
     languages: string[],
     certifications: string[]
 }
 
-interface EvaluationPair {
+export interface EvaluationPair {
   cv: File;
   verdict: string;
 }

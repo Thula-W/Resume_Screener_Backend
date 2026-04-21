@@ -1,4 +1,4 @@
-import { supabase } from "../config/supabase.ts";
+import { supabase } from "../config/supabase";
 
 export const testSupabaseStorage = async () => {
   const bucket = "resumes";

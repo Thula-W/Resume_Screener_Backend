@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { authenticate } from "../middleware/auth.ts";
-import { confirmUpload, uploadIntent } from "../controllers/resume.controlls.ts";
+import { authenticate } from "../middleware/auth";
+import { confirmUpload, uploadIntent } from "../controllers/resume.controlls";
 
 const router = Router();
 

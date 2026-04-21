@@ -1,11 +1,12 @@
-import { r2 } from "../config/r2.ts";
-import {prisma} from "../config/prisma.ts";
+import { r2 } from "../config/r2";
+import {prisma} from "../config/prisma";
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { openAiClient } from "../config/openai.ts";
-import { systemPrompt, JSON_STRUCTURE } from "../prompts/parse.prompts.ts";
-import { resumeEmbeddingsQueue } from "./queue.ts";
+import { openAiClient } from "../config/openai";
+import { systemPrompt, JSON_STRUCTURE } from "../prompts/parse.prompts";
+import { resumeEmbeddingsQueue } from "./queue";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "stream";
+import { constraints } from "../types";
 
 // ---------- helpers --------------------------------
 export const extractTextFromPDF = async (buffer: Buffer) => {
@@ -84,7 +85,7 @@ export const convertJsonToText = (data: any): { bio: string; experience: string;
 
   if (bio.education && bio.education.length > 0) {
     const eduText = bio.education
-      .map(e => {
+      .map((e: any) => {
         let line = `- ${e.qualifications} from ${e.institution}`;
         if (e.honors && e.honors.length > 0) line += ` (Honors: ${e.honors.join(", ")})`;
         if (e.timeframe) line += ` [${e.timeframe}]`;
@@ -99,7 +100,7 @@ export const convertJsonToText = (data: any): { bio: string; experience: string;
   }
 
   // 2. Process Experience
-  const expLines = data.experience_bucket.map(exp => {
+  const expLines = data.experience_bucket.map((exp: any) => {
     const title =  exp.role  || "";
     const name = exp.name ? ` ${exp.name}` : "";
     const org = exp.organization ? ` at ${exp.organization}` : "";
@@ -111,8 +112,8 @@ export const convertJsonToText = (data: any): { bio: string; experience: string;
 
   // 3. Process Skills
   const skillLines = data.skills_bucket
-    .filter(s => s.values && s.values.length > 0) // Skip empty categories
-    .map(s => `${s.category}: ${s.values.join(", ")}`);
+    .filter((s: any) => s.values && s.values.length > 0) // Skip empty categories
+    .map((s: any) => `${s.category}: ${s.values.join(", ")}`);
 
   return {
     bio: bioLines.join("\n\n"),
@@ -138,11 +139,12 @@ function checkHardConstraints(candidate: constraints, constraints: constraints):
     bachelors: 2,
     masters: 3,
     phd: 4
-  };
+  } as const;
 
+  type EducationLevel = keyof typeof educationRank;
   if (
     constraints.education &&
-    educationRank[candidate.education.toLowerCase()] < (educationRank[constraints.education.toLowerCase()] ?? 0)
+    educationRank[candidate.education.toLowerCase() as EducationLevel] < (educationRank[constraints.education.toLowerCase() as EducationLevel] ?? 0)
   ) {
     console.log(`Disqualified due to education level ${candidate.education} < ${constraints.education}`);
     return false;
@@ -192,13 +194,13 @@ ${data.skills}
 
 
 //----------------------------------------------------------
-export const processResume = async (resumeId: string, constraints) => {
+export const processResume = async (resumeId: string, constraints: any) => {
     console.log(resumeId);
     try {
       const resume = await prisma.resume.findUnique({
         where: { id: resumeId },
       });
-      console.log(resume.storagePath)
+      console.log(resume?.storagePath)
       if (!resume) throw new Error("Resume not found");
 
       // const paths = resume.storagePath.split("/");
@@ -211,7 +213,7 @@ export const processResume = async (resumeId: string, constraints) => {
       const text = await extractTextFromPDF(fileBuffer);
       console.log(text)
 
-      const json = await extractJson(text);
+      const json = await extractJson(text) || "{}";
       console.log(json);
 
 

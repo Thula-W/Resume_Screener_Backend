@@ -1,9 +1,9 @@
 import type { Request, Response } from "express";
-import { prisma } from "../config/prisma.ts";
-import { jobEmbeddingsQueue } from "../utils/queue.ts";
-import { combineResumeText, convertJsonToText, extractJson, extractTextFromPDF } from "../utils/resumeHelpers.ts";
-import type {AddEvaluationsRequest} from "../types.ts"
-import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers.ts";
+import { prisma } from "../config/prisma";
+import { jobEmbeddingsQueue } from "../utils/queue";
+import { combineResumeText, convertJsonToText, extractJson, extractTextFromPDF } from "../utils/resumeHelpers";
+import type {AddEvaluationsRequest, EvaluationPair} from "../types"
+import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers";
 
 export const addJob = async (req: Request, res: Response) => {
   const { title, overview, skills, bio, experience, constraints } = req.body ?? {};
@@ -24,6 +24,9 @@ export const addJob = async (req: Request, res: Response) => {
       where: { firebaseUid },
     });
 
+    if (!user?.id) {
+      throw new Error("You must be logged in to create a job");
+    }
     const job = await prisma.job.create({
       data: {
         userId: user?.id,
@@ -61,7 +64,7 @@ try {
       const request = await parseEvaluationRequest(req);
       await processEvaluations(request);
       res.json({ success: true });
-    } catch (err) {
+    } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   };
@@ -70,7 +73,7 @@ try {
 const parseEvaluationRequest = async (
   req: Request
 ): Promise<AddEvaluationsRequest> => {
-  const jobId = req.params.jobId;
+  const jobId = req.params.jobId as string;
   const files = req.files as Record<string, Express.Multer.File[]>;
 
   const pairs = [0, 1, 2]
@@ -80,13 +83,13 @@ const parseEvaluationRequest = async (
 
       if (!fileEntry || !verdict) return null;
 
-      const cv = new File([fileEntry.buffer], fileEntry.originalname, {
+      const cv = new File([new Uint8Array(fileEntry.buffer)], fileEntry.originalname, {
         type: "application/pdf",
       });
 
       return { cv, verdict };
     })
-    .filter(Boolean);
+    .filter((item): item is EvaluationPair => item !== null);;
 
   if (!pairs.length) throw new Error("No valid CV+verdict pairs found in request.");
 
@@ -111,7 +114,7 @@ const processEvaluations = async (req: AddEvaluationsRequest): Promise<void> => 
 
     const buffer = Buffer.from(await cv.arrayBuffer());
     const text = await extractTextFromPDF(buffer);
-    const json = await extractJson(text);
+    const json = await extractJson(text) || "{}";
     const bucketTexts = convertJsonToText(JSON.parse(json));
 
     const { attributes, ...restBuckets } = bucketTexts;

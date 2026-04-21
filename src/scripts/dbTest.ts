@@ -1,21 +1,21 @@
-import {prisma} from "../config/prisma.ts";
+// import {prisma} from "../config/prisma";
 
-const user = await prisma.user.create({
-  data: {
-    firebaseUid: "test_firebase_uid",
-    email: "test@example.com",
-  },
-});
+// const user = await prisma.user.create({
+//   data: {
+//     firebaseUid: "test_firebase_uid",
+//     email: "test@example.com",
+//   },
+// });
 
-console.log(user);
+// console.log(user);
 
-async function main() {
-  const users = await prisma.user.findMany();
-  console.log("Users:", users);
-}
+// async function main() {
+//   const users = await prisma.user.findMany();
+//   console.log("Users:", users);
+// }
 
-main()
-  .catch(console.error)
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// main()
+//   .catch(console.error)
+//   .finally(async () => {
+//     await prisma.$disconnect();
+//   });
