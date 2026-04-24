@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { prisma } from '../config/prisma';
 import { downloadResumeFile, extractTextFromPDF, extractJson, convertJsonToText, combineResumeText, checkHardConstraints } from '../utils/resumeHelpers';
 import { processResumeEmbeddings } from '../utils/embeddingHelpers';
@@ -7,7 +8,7 @@ export const processResume = async (resumeId: string, jobId: string, constraints
   const resume = await prisma.resume.findUnique({ where: { id: resumeId } });
   if (!resume) throw new Error('Resume not found');
 
-  const fileBuffer = await downloadResumeFile('resumes', resume.storagePath);
+  const fileBuffer = await downloadResumeFile(process.env.R2_BUCKET_NAME || 'azendly-resumes', resume.storagePath);
   const text       = await extractTextFromPDF(fileBuffer);
   const json       = await extractJson(text) || '{}';
   const bucketTexts = convertJsonToText(JSON.parse(json));

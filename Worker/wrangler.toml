@@ -42,7 +42,7 @@ queue    = "rerank-chunks"
 
 [[queues.consumers]]
 queue             = "resume-extract"
-max_batch_size    = 10
+max_batch_size    = 19
 max_batch_timeout = 5
 
 [[queues.consumers]]
