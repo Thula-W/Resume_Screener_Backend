@@ -3,7 +3,6 @@ import {prisma} from "../config/prisma";
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { openAiClient } from "../config/openai";
 import { systemPrompt, JSON_STRUCTURE } from "../prompts/parse.prompts";
-import { resumeEmbeddingsQueue } from "./queue";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "stream";
 import { constraints } from "../types";
@@ -23,7 +22,7 @@ export const extractTextFromPDF = async (buffer: Buffer) => {
   return text;
 };
 
-const downloadResumeFile = async (
+export const downloadResumeFile = async (
   bucket: string,
   filePath: string
 ): Promise<Buffer> => {
@@ -123,7 +122,7 @@ export const convertJsonToText = (data: any): { bio: string; experience: string;
   };
 }
 
-function checkHardConstraints(candidate: constraints, constraints: constraints):boolean {
+export const checkHardConstraints = (candidate: constraints, constraints: constraints):boolean => {
   // Years of experience
   if (
     constraints.yearsOfExperience &&
@@ -194,59 +193,59 @@ ${data.skills}
 
 
 //----------------------------------------------------------
-export const processResume = async (resumeId: string, constraints: any) => {
-    console.log(resumeId);
-    try {
-      const resume = await prisma.resume.findUnique({
-        where: { id: resumeId },
-      });
-      console.log(resume?.storagePath)
-      if (!resume) throw new Error("Resume not found");
+// export const processResume = async (resumeId: string, constraints: any) => {
+//     console.log(resumeId);
+//     try {
+//       const resume = await prisma.resume.findUnique({
+//         where: { id: resumeId },
+//       });
+//       console.log(resume?.storagePath)
+//       if (!resume) throw new Error("Resume not found");
 
-      // const paths = resume.storagePath.split("/");
+//       // const paths = resume.storagePath.split("/");
 
-      const fileBuffer = await downloadResumeFile(
-          'resumes',
-          resume.storagePath
-      );
+//       const fileBuffer = await downloadResumeFile(
+//           'resumes',
+//           resume.storagePath
+//       );
 
-      const text = await extractTextFromPDF(fileBuffer);
-      console.log(text)
+//       const text = await extractTextFromPDF(fileBuffer);
+//       console.log(text)
 
-      const json = await extractJson(text) || "{}";
-      console.log(json);
+//       const json = await extractJson(text) || "{}";
+//       console.log(json);
 
 
-      const bucketTexts = convertJsonToText(JSON.parse(json));
+//       const bucketTexts = convertJsonToText(JSON.parse(json));
 
-      const { attributes, ...restBuckets } = bucketTexts;
-      const content = combineResumeText(restBuckets);
-      const qualified = checkHardConstraints(attributes, constraints);
-      const status = qualified ? "PARSED" : "DISQUALIFIED";
+//       const { attributes, ...restBuckets } = bucketTexts;
+//       const content = combineResumeText(restBuckets);
+//       const qualified = checkHardConstraints(attributes, constraints);
+//       const status = qualified ? "PARSED" : "DISQUALIFIED";
 
-      await prisma.resume.update({
-        where: { id: resumeId },
-        data: {
-          content: content,
-          status: status
-        },
-      });
+//       await prisma.resume.update({
+//         where: { id: resumeId },
+//         data: {
+//           content: content,
+//           status: status
+//         },
+//       });
       
-      if (qualified){
-        await resumeEmbeddingsQueue.add("process-resume-embeddings", {
-          resumeId,
-          buckets: restBuckets,
-        });
-      }
+//       if (qualified){
+//         await resumeEmbeddingsQueue.add("process-resume-embeddings", {
+//           resumeId,
+//           buckets: restBuckets,
+//         });
+//       }
 
-      return bucketTexts;
+//       return bucketTexts;
       
-    } catch (error) {
-      console.log("error:", error);
-      throw error;
-    }
+//     } catch (error) {
+//       console.log("error:", error);
+//       throw error;
+//     }
     
-}
+// }
 
 // const a = await downloadResumeFile('azendly-resumes', "666842d0-b371-471a-ac42-840687bb6083/464a14cb-ecbc-4ee0-86df-57cc6046405a/1776409774975_80037666-a823-4482-83ff-7829c87880a3_Thulana_Weerasekara.pdf")
 // const txt = await extractTextFromPDF(a);

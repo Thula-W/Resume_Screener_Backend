@@ -14,3 +14,11 @@ export interface AddEvaluationsRequest {
   jobId: string;
   pairs: EvaluationPair[]; // 1–3 pairs
 }
+
+export interface JobData {
+  title: string;
+  overview: string | null;
+  bioText: string | null;
+  skillsText: string | null;
+  experienceText: string | null;
+}

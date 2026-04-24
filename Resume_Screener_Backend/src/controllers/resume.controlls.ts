@@ -1,28 +1,12 @@
 import { prisma } from "../config/prisma";
 import type { Request, Response } from "express";
 import { r2 } from "../config/r2";
-import { resumeQueue } from "../utils/queue";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { AuthRequest } from "../middleware/auth";
+import { enqueueToExtractQueue } from "../lib/queueClient";
+import { JobStatus } from '@prisma/client';
 
-/**
- * POST /upload-intent
- * Generate signed upload URLs for direct Supabase upload
- * Supports both single and bulk uploads
- * 
- * Request body:
- * {
- *   jobId: string,
- *   files: Array<{ name: string }> // for bulk, optional
- * }
- * 
- * Response:
- * {
- *   uploadIntents: Array<{ resumeId, signedUrl, expiresIn }>,
- *   constraints: { maxSizeMB, allowedTypes }
- * }
- */
 export const uploadIntent = async (req: AuthRequest, res: Response) => {
   try {
     const firebaseUid = req.user?.id;
@@ -113,127 +97,108 @@ export const uploadIntent = async (req: AuthRequest, res: Response) => {
   }
 }
 
-/**
- * POST /upload-confirm
- * Confirms bulk resumne uploads and queues processing
- * 
- * Request body:
- * {
- *   jobId: string,
- *   resumes: Array<{
- *     resumeId: string
- *   }>
- * }
- * 
- * Response:
- * {
- *   success: boolean,
- *   jobId: string,
- *   queueJobId: string,
- *   processedCount: number
- * }
- */
 export const confirmUpload = async (req: AuthRequest, res: Response) => {
   try {
     const firebaseUid = req.user?.id;
-    const { jobId, resumes } = req.body;
+    const { jobId, resumes, triggerScoring = false } = req.body;
+    // ↑ new: optional triggerScoring flag from client
 
     if (!jobId || !resumes || !Array.isArray(resumes) || resumes.length === 0) {
-      return res.status(400).json({
-        error: "jobId and resumes array (with at least 1 item) are required",
-      });
+      return res.status(400).json({ error: 'jobId and resumes array required' });
     }
 
-    // Verify job ownership
-    const job = await prisma.job.findUnique({
-      where: { id: jobId },
-    });
+    const [job, user] = await Promise.all([
+      prisma.job.findUnique({ where: { id: jobId } }),
+      prisma.user.findUnique({ where: { firebaseUid } }),
+    ]);
 
-    if (!job) {
-      return res.status(404).json({ error: "Job not found" });
-    }
+    if (!job)                        return res.status(404).json({ error: 'Job not found' });
+    if (!user || job.userId !== user.id) return res.status(403).json({ error: 'Forbidden' });
 
-    const user = await prisma.user.findUnique({
-      where: { firebaseUid },
-    });
+    const resumeIds = resumes.map((r: { resumeId: string }) => r.resumeId);
 
-    if (!user || job.userId !== user.id) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-
-    // Validate all resumes exist and belong to this job
-    const resumeIds = resumes.map((r) => r.resumeId);
     const existingResumes = await prisma.resume.findMany({
-      where: {
-        id: { in: resumeIds },
-        jobId, // Verify they belong to this job
-      },
+      where: { id: { in: resumeIds }, jobId },
     });
 
     if (existingResumes.length !== resumeIds.length) {
-      return res.status(400).json({
-        error: "One or more resumes not found or don't belong to this job",
-      });
+      return res.status(400).json({ error: 'One or more resumes not found or wrong job' });
     }
 
-    // Verify all are in PENDING status
-    const invalidStatusResumes = existingResumes.filter(
-      (r) => r.status !== "PENDING"
-    );
-    if (invalidStatusResumes.length > 0) {
-      return res.status(400).json({
-        error: `${invalidStatusResumes.length} resume(s) are not in PENDING status`,
-      });
+    const notPending = existingResumes.filter((r) => r.status !== 'PENDING');
+    if (notPending.length > 0) {
+      return res.status(400).json({ error: `${notPending.length} resume(s) not in PENDING status` });
     }
 
-    await prisma.job.update({
-      where: { id: jobId },
-      data: {
-        resumeCount: resumeIds.length, // Set the total number of resumes for this job
-      },
+    // ── 1. Create batch record ─────────────────────────────────────────────
+    const batch = await prisma.uploadBatch.create({
+      data: { jobId, totalResumes: resumeIds.length },
     });
 
-    // const batch = await prisma.uploadBatch.create({
-    //   data: {
-    //     jobId,
-    //     totalResumes: resumeIds.length,
-    //   },
-    // });
-
-    // Update all resumes to UPLOADED
-    await prisma.resume.updateMany({
-      where: { id: { in: resumeIds } },
-      data: {
-        status: "UPLOADED",
-        uploadedAt: new Date(),
-        // batchId: batch.id,
-      },
-    });
-
-    const constraints = job.constraints;
-    await resumeQueue.addBulk(
-      resumeIds.map((resumeId) => ({
-        name: "process-resume",
-        data: { resumeId, constraints },
-        opts: {
-         // jobId: resumeId, // prevents duplicates
-          attempts: 3,
-          backoff: { type: "exponential", delay: 3000 },
-          removeOnComplete: true,
-          removeOnFail: false,
+    // ── 2. Atomically increment job.totalResumes (multi-batch safe) ────────
+    await prisma.$transaction([
+      prisma.job.update({
+        where: { id: jobId },
+        data:  {
+          totalResumes: { increment: resumeIds.length },
+          status:       'PROCESSING',
+          // If client wants scoring, mark it now — DO will pick it up
+          ...(triggerScoring ? { scoringRequested: true } : {}),
         },
-      }))
-    );
+      }),
+      prisma.resume.updateMany({
+        where: { id: { in: resumeIds } },
+        data:  { status: 'UPLOADED', uploadedAt: new Date(), batchId: batch.id },
+      }),
+    ]);
 
-    res.json({
-      success: true,
-      jobId,
-      //queueJobId: queueJob.id,
-    });
+    // ── 3. Enqueue to Cloudflare Queue via Worker binding ──────────────────
+    // The container calls back to the worker's internal enqueue endpoint
+    // (container doesn't have direct queue bindings)
+    const messages = resumeIds.map((resumeId) => ({ resumeId, jobId }));
+    await enqueueToExtractQueue(messages);
+    // ↑ see section 5 below
+
+    return res.json({ success: true, jobId, batchId: batch.id });
+
   } catch (error) {
-    console.error("Upload confirm error:", error);
-    res.status(500).json({ error: "Failed to confirm uploads" });
+    console.error('Upload confirm error:', error);
+    return res.status(500).json({ error});
   }
+};
+
+// Internal endpoint — worker calls this to read totalResumes for DO
+export const getJobTotal = async (req: Request, res: Response) => {
+  const { jobId } = req.query as { jobId: string };
+  const job = await prisma.job.findUnique({
+    where:  { id: jobId },
+    select: { totalResumes: true },
+  });
+  res.json({ totalResumes: job?.totalResumes ?? 0 });
+};
+
+// Internal endpoint — worker calls this to validate trigger-scoring request
+export const validateTrigger = async (req: AuthRequest, res: Response) => {
+  const { jobId } = req.body;
+  const firebaseUid = req.user?.id;
+
+  const [job, user] = await Promise.all([
+    prisma.job.findUnique({ where: { id: jobId } }),
+    prisma.user.findUnique({ where: { firebaseUid } }),
+  ]);
+
+  if (!job)                          return res.status(404).json({ error: 'Job not found' });
+  if (!user || job.userId !== user.id)  return res.status(403).json({ error: 'Forbidden' });
+  if (job.totalResumes === 0)        return res.status(400).json({ error: 'No resumes uploaded yet' });
+  if (job.status === JobStatus.EMBEDDING_DONE)       return res.status(400).json({ error: 'Already scored' });
+
+  // Mark scoringRequested in DB as well (source of truth backup)
+  await prisma.job.update({
+    where: { id: jobId },
+    data:  { scoringRequested: true },
+  });
+
+  return res.json({ ok: true });
 };
 
 

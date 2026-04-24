@@ -1,0 +1,53 @@
+import { Request, Response } from 'express';
+import { prisma } from '../config/prisma';
+import { processResume } from '../services/resumeProcess.service';
+
+export const processBatch = async (req: Request, res: Response) => {
+  const { messages } = req.body as {
+    messages: { resumeId: string; jobId: string }[];
+  };
+
+  const results = await Promise.all(
+    messages.map(async ({ resumeId, jobId }) => {
+      try {
+        const job = await prisma.job.findUnique({ where: { id: jobId } });
+        // ── Guard 1: idempotency — skip if already past UPLOADED ──────────
+        const resume = await prisma.resume.findUnique({ where: { id: resumeId } });
+        if (!resume) return { resumeId, jobId, outcome: 'failed' as const };
+
+        if (!['UPLOADED', 'PROCESSING'].includes(resume.status)) {
+          // Already processed in a previous attempt — report as processed
+          // so the DO counter still advances correctly
+          return { resumeId, jobId, outcome: 'processed' as const };
+        }
+
+        // ── Guard 2: atomic claim — only one worker processes this resume ──
+        const claimed = await prisma.resume.updateMany({
+          where: { id: resumeId, status: 'UPLOADED' },
+          data:  { status: 'PROCESSING' },
+        });
+
+        if (claimed.count === 0) {
+          // Another worker claimed it — skip, do not double-count
+          return null; // filtered out below
+        }
+
+        // ── Process ────────────────────────────────────────────────────────
+        await processResume(resumeId, resume.jobId, job?.constraints);
+        return { resumeId, jobId, outcome: 'processed' as const };
+
+      } catch (err) {
+        console.error(`Failed resume ${resumeId}:`, err);
+        await prisma.resume.update({
+          where: { id: resumeId },
+          data:  { status: 'FAILED' },
+        });
+        return { resumeId, jobId, outcome: 'failed' as const };
+      }
+    })
+  );
+
+  // Filter out nulls (skipped — claimed by another worker)
+  const finalResults = results.filter(Boolean);
+  return res.json({ results: finalResults });
+};

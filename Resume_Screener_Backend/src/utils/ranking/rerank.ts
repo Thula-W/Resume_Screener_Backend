@@ -1,14 +1,14 @@
 import { prisma } from "../../config/prisma";
 import { openAiClient } from "../../config/openai";
+import { JobData } from "../../types";
 
-const ANCHOR_BATCH_SIZE = 7;
+export const ANCHOR_BATCH_SIZE = 7;
 
-function calculateTopN(totalResumes: number): number {
-    const n = Math.ceil(totalResumes * 0.1);
-    return Math.max(n, 5); 
-}
+export const calculateTopN = (totalResumes: number): number => {
+  return Math.max(Math.ceil(totalResumes * 0.1), 5);
+};
 
-async function fetchTopScreeningResults(jobId: string, topN: number) {
+export const fetchTopScreeningResults = async (jobId: string, topN: number) => {
   return prisma.screeningResult.findMany({
     where: { jobId },
     orderBy: { finalScore: "desc" },
@@ -21,9 +21,9 @@ async function fetchTopScreeningResults(jobId: string, topN: number) {
   });
 }
 
-async function fetchEvaluationsForJob(
+export const fetchEvaluationsForJob = async (
   jobId: string
-): Promise<{ rawText: string; verdict: string }[]> {
+): Promise<{ rawText: string; verdict: string }[]> => {
   return prisma.evaluations.findMany({
     where: { jobId },
     select: { rawText: true, verdict: true },
@@ -31,20 +31,22 @@ async function fetchEvaluationsForJob(
   });
 }
 
-async function fetchJobMetadata(
+export const fetchJobMetadata = async (
   jobId: string
-): Promise<{ title: string; overview: string | null; bioText: string | null; skillsText: string | null; experienceText: string | null } | null> {
-  return prisma.job.findUnique({
+): Promise<JobData> => {
+  const jobData = await prisma.job.findUnique({
     where: { id: jobId },
     select: { title: true, overview: true, bioText: true , skillsText: true, experienceText: true},
   });
+  if (!jobData) throw new Error(`Job not found: ${jobId}`);
+  return jobData;
 }
 
-function buildBatchedRerankerPrompt(
-  jobData: { title: string; overview: string | null; bioText: string | null; skillsText: string | null; experienceText: string | null },
+export const buildBatchedRerankerPrompt = (
+  jobData: JobData,
   evaluations: { rawText: string; verdict: string }[],
   candidates: { resumeId: string; content: string }[]
-): string {
+): string => {
     const examplesBlock = evaluations
   .map(
     (e, i) => `
@@ -193,9 +195,9 @@ Return ONLY a JSON object with this exact structure:
 // `.trim();
 }
 
-async function callBatchedRerankerLLM(
+export const callBatchedRerankerLLM = async (
   prompt: string
-): Promise<{ resumeId: string; score: number; explanation: string }[]> {
+): Promise<{ resumeId: string; score: number; explanation: string }[]> => {
   const response = await openAiClient.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
@@ -219,9 +221,9 @@ async function callBatchedRerankerLLM(
   }));
 }
 
-async function fetchResumeContents(
+export const fetchResumeContents = async (
   resumeIds: string[]
-): Promise<{ resumeId: string; content: string }[]> {
+): Promise<{ resumeId: string; content: string }[]> => {
   const resumes = await prisma.resume.findMany({
     where: { id: { in: resumeIds } },
     select: { id: true, content: true },
@@ -232,9 +234,9 @@ async function fetchResumeContents(
     .map((r) => ({ resumeId: r.id, content: r.content }));
 }
 
-async function saveAllRerankedResults(
+export const saveAllRerankedResults = async (
   results: { screeningResultId: string; rerankedScore: number; explanation: string }[]
-): Promise<void> {
+): Promise<void> => {
   await prisma.$transaction(
     results.map(({ screeningResultId, rerankedScore, explanation }) =>
       prisma.screeningResult.update({
@@ -245,22 +247,21 @@ async function saveAllRerankedResults(
   );
 }
 
-function chunkArray<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
+export const chunkArray = <T>(arr: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
-function selectAnchors(
-  topResults: { resumeId: string; id: string; finalScore: number }[]
-): { resumeId: string; id: string; finalScore: number }[] {
-  const sorted = [...topResults].sort((a, b) => b.finalScore - a.finalScore);
-  const highAnchor = sorted[0];
-  const midAnchor = sorted[Math.floor((sorted.length - 1) / 2)];
-  const lowAnchor = sorted[sorted.length - 1];
-  return [highAnchor, midAnchor, lowAnchor];
+export const selectAnchors = (
+  results: { resumeId: string; id: string; finalScore: number }[]
+) => {
+  const sorted = [...results].sort((a, b) => b.finalScore - a.finalScore);
+  return [
+    sorted[0],
+    sorted[Math.floor((sorted.length - 1) / 2)],
+    sorted[sorted.length - 1],
+  ];
 }
 
 function separateAnchorsFromCandidates(
@@ -359,10 +360,10 @@ export async function rerankResumesForJob(jobId: string): Promise<void> {
 
   const job = await prisma.job.findUnique({
     where: { id: jobId },
-    select: { resumeCount: true },
+    select: { totalResumes: true },
   });
 
-  const totalResumes = job?.resumeCount ?? 0;
+  const totalResumes = job?.totalResumes ?? 0;
   const topN = calculateTopN(totalResumes);
   console.log(`Total resumes: ${totalResumes} → Reranking top ${topN}`);
 
@@ -544,9 +545,9 @@ export async function rerankResumesForJob(jobId: string): Promise<void> {
 
 
 
-const start = async () => {
-  const result = await rerankResumesForJob("68722bb7-0d26-4a6e-bd19-edb334c25a68");
-  // rest of your startup code
-};
+// const start = async () => {
+//   const result = await rerankResumesForJob("68722bb7-0d26-4a6e-bd19-edb334c25a68");
+//   // rest of your startup code
+// };
 
-start();
+// start();
