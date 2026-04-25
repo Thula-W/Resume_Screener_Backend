@@ -242,7 +242,7 @@ export default {
         const container = getContainer(env.MY_BACKEND, slot);
 
         const res = await container.fetch(
-          new Request('http://container/internal/process-batch', {
+          new Request('https://api.azendly.net/internal/process-batch', {
             method:  'POST',
             headers: { 'content-type': 'application/json', 'x-internal': '1' },
             body:    JSON.stringify({ messages }),
@@ -286,7 +286,7 @@ export default {
         const container = getContainer(env.MY_BACKEND, slot);
 
         const res = await container.fetch(
-          new Request('http://container/internal/rerank-chunk', {
+          new Request('https://api.azendly.net/internal/rerank-chunk', {
             method:  'POST',
             headers: { 'content-type': 'application/json', 'x-internal': '1' },
             body:    JSON.stringify({ jobId, resumeIds, anchorIds, chunkIndex }),
@@ -315,7 +315,7 @@ export default {
         const container = getContainer(env.MY_BACKEND, slot);
 
         const res = await container.fetch(
-          new Request('http://container/internal/rerank-finalize', {
+          new Request('https://api.azendly.net/internal/rerank-finalize', {
             method:  'POST',
             headers: { 'content-type': 'application/json', 'x-internal': '1' },
             body:    JSON.stringify({ jobId }),
@@ -334,7 +334,7 @@ export default {
         const container = getContainer(env.MY_BACKEND, slot);
 
         const res = await container.fetch(
-          new Request('http://container/internal/rerank-job', {
+          new Request('https://api.azendly.net/internal/rerank-job', {
             method:  'POST',
             headers: { 'content-type': 'application/json', 'x-internal': '1' },
             body:    JSON.stringify({ jobId }),

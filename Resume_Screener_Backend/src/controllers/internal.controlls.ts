@@ -3,12 +3,16 @@ import { prisma } from '../config/prisma';
 import { processResume } from '../services/resumeProcess.service';
 
 export const processBatch = async (req: Request, res: Response) => {
-  const { messages } = req.body as {
-    messages: { resumeId: string; jobId: string }[];
-  };
+  const { messages } = req.body;
+
+  if (!messages || !Array.isArray(messages)) {
+    console.error("Invalid body format. Expected { messages: [...] }");
+    return res.status(400).json({ error: "Invalid request format", received: req.body });
+  }
 
   const results = await Promise.all(
-    messages.map(async ({ resumeId, jobId }) => {
+    messages.map(async (msg) => {
+      const { resumeId, jobId } = msg;
       try {
         const job = await prisma.job.findUnique({ where: { id: jobId } });
         // ── Guard 1: idempotency — skip if already past UPLOADED ──────────
