@@ -132,15 +132,15 @@ async function scoreChunk(
   for (const row of rows) {
     // Within-bucket weighted scores
     console.log(row)
-    const skillScore      = row.skills_sem * 0.35 + row.skills_kw  * 0.65;
-    const experienceScore = row.exp_sem    * 0.60 + row.exp_kw     * 0.40;
+    const skillScore      = row.skills_sem * 0.40 + row.skills_kw  * 0.60;
+    const experienceScore = row.exp_sem    * 0.70 + row.exp_kw     * 0.30; 
     const bioScore        = row.bio_sem    * 0.75 + row.bio_kw     * 0.25;
 
     // Final weighted roll-up
     const finalScore =
       skillScore      * 0.45 +
-      experienceScore * 0.35 +
-      bioScore        * 0.20;
+      experienceScore * 0.45 +
+      bioScore        * 0.10;
 
     // A zero final score across all three buckets almost certainly means
     // the job embeddings are NULL — flag it instead of silently writing 0
@@ -204,10 +204,10 @@ async function persistChunk(
     )
   );
 
-  // Mark resumes READY in one batch update
+  // Mark resumes SCORE in one batch update
   await prisma.resume.updateMany({
     where: { id: { in: scores.map((s) => s.resumeId) } },
-    data:  { status: "READY" },
+    data:  { status: "SCORED" },
   });
 }
 
