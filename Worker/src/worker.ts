@@ -44,7 +44,7 @@ export class JobProgressTracker extends DurableObject {
     super(ctx, env);
   }
 
-  async increment(jobId: string, processed: number, failed: number): Promise<{
+  async increment(jobId: string, processed: number, failed: number, totalResumes?: number): Promise<{
     done: boolean;
     shouldTriggerScoring: boolean;
   }> {
@@ -53,31 +53,34 @@ export class JobProgressTracker extends DurableObject {
       const f = ((await txn.get<number>('failedCount'))   ?? 0) + failed;
       await txn.put('processedCount', p);
       await txn.put('failedCount',    f);
+
+      // Store totalResumes if provided (first batch sets it; later batches can update)
+      if (totalResumes !== undefined) {
+        await txn.put('totalResumes', totalResumes);
+      }
     });
 
     return this._checkCompletion(jobId);
   }
 
-  async requestScoring(jobId: string): Promise<{
+  async requestScoring(jobId: string, totalResumes: number): Promise<{
     done: boolean;
     shouldTriggerScoring: boolean;
   }> {
-    await this.ctx.storage.put('scoringRequested', true);
+    await this.ctx.storage.transaction(async (txn) => {
+      await txn.put('scoringRequested', true);
+      if (totalResumes !== undefined) {
+        await txn.put('totalResumes', totalResumes);
+      }
+    });
     return this._checkCompletion(jobId);
   }
 
   private async _checkCompletion(jobId: string): Promise<{
     done: boolean;
     shouldTriggerScoring: boolean;
-  }> {
-    // Always read totalResumes fresh from DB — handles multi-batch uploads
-    const res = await fetch(
-      `http://localhost/internal/job-total?jobId=${jobId}`,
-      { headers: { 'x-internal': '1' } }
-    );
-    // We call our own container's internal endpoint (see section 4)
-    const { totalResumes } = await res.json() as { totalResumes: number };
-
+  }> {    
+    const totalResumes = (await this.ctx.storage.get<number>('totalResumes')) ?? 0;
     if (!totalResumes || totalResumes === 0) return { done: false, shouldTriggerScoring: false };
 
     const processedCount    = (await this.ctx.storage.get<number>('processedCount'))    ?? 0;
@@ -154,37 +157,51 @@ export default {
     }
 
     // /trigger-scoring — worker validates then calls DO
-    if (url.pathname === '/api/resumes/trigger-scoring' && method === 'POST') {
-      const body    = await request.clone().json() as { jobId: string };
-      const jobId   = body.jobId;
+    if (url.pathname === '/api/job/trigger-scoring' && method === 'POST') {
+      try {
+        const body    = await request.json() as { jobId: string };
+        const jobId   = body.jobId;
+        // Basic guard — full validation happens inside container
+        if (!jobId) return new Response('jobId required', { status: 400 });
 
-      // Basic guard — full validation happens inside container
-      if (!jobId) return new Response('jobId required', { status: 400 });
+        // Forward to container for auth + DB validation first
+        const container  = getContainer(env.MY_BACKEND, 'default');
+        const validation = await container.fetch(
+          new Request(`http://dummy/internal/validate-trigger`, {
+            method:  'POST',
+            headers: request.headers,
+            body:    JSON.stringify({ jobId }),
+          })
+        );
 
-      // Forward to container for auth + DB validation first
-      const container  = getContainer(env.MY_BACKEND, 'default');
-      const validation = await container.fetch(
-        new Request(`${url.origin}/internal/validate-trigger`, {
-          method:  'POST',
-          headers: request.headers,
-          body:    JSON.stringify({ jobId }),
-        })
-      );
+        if (!validation.ok) return validation;
 
-      if (!validation.ok) return validation;
+        const totalRes = await container.fetch(
+          new Request(`http://dummy/internal/job-total?jobId=${jobId}`, {
+            headers: { 'x-internal': '1' },
+          })
+        );
+        const { totalResumes } = await totalRes.json() as { totalResumes: number };
 
-      // Call DO
-      const doId    = env.JOB_TRACKER.idFromName(jobId);
-      const tracker = env.JOB_TRACKER.get(doId);
-      const result  = await tracker.requestScoring(jobId);
+        // Call DO
+        const doId    = env.JOB_TRACKER.idFromName(jobId);
+        const tracker = env.JOB_TRACKER.get(doId);
+        const result  = await tracker.requestScoring(jobId, totalResumes);
 
-      if (result.shouldTriggerScoring) {
-        await env.RERANK_QUEUE.send({ jobId });
+        if (result.shouldTriggerScoring) {
+          await env.RERANK_QUEUE.send({ jobId });
+        }
+
+        return new Response(JSON.stringify({ queued: result.shouldTriggerScoring }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      } catch (e) {
+        console.error("ERROR:", e);
+        return Response.json(
+          { error: String(e) },
+          { status: 500 }
+        );
       }
-
-      return new Response(JSON.stringify({ queued: result.shouldTriggerScoring }), {
-        headers: { 'content-type': 'application/json' },
-      });
     }
 
     // Add inside worker fetch() before the default fallthrough
@@ -242,7 +259,7 @@ export default {
         const container = getContainer(env.MY_BACKEND, slot);
 
         const res = await container.fetch(
-          new Request('https://api.azendly.net/internal/process-batch', {
+          new Request('http://dummy/internal/process-batch', {
             method:  'POST',
             headers: { 'content-type': 'application/json', 'x-internal': '1' },
             body:    JSON.stringify({ messages }),
@@ -286,7 +303,7 @@ export default {
         const container = getContainer(env.MY_BACKEND, slot);
 
         const res = await container.fetch(
-          new Request('https://api.azendly.net/internal/rerank-chunk', {
+          new Request('http://dummy/internal/rerank-chunk', {
             method:  'POST',
             headers: { 'content-type': 'application/json', 'x-internal': '1' },
             body:    JSON.stringify({ jobId, resumeIds, anchorIds, chunkIndex }),
@@ -315,7 +332,7 @@ export default {
         const container = getContainer(env.MY_BACKEND, slot);
 
         const res = await container.fetch(
-          new Request('https://api.azendly.net/internal/rerank-finalize', {
+          new Request('http://dummy/internal/rerank-finalize', {
             method:  'POST',
             headers: { 'content-type': 'application/json', 'x-internal': '1' },
             body:    JSON.stringify({ jobId }),
@@ -334,7 +351,7 @@ export default {
         const container = getContainer(env.MY_BACKEND, slot);
 
         const res = await container.fetch(
-          new Request('https://api.azendly.net/internal/rerank-job', {
+          new Request('http://dummy/internal/rerank-job', {
             method:  'POST',
             headers: { 'content-type': 'application/json', 'x-internal': '1' },
             body:    JSON.stringify({ jobId }),

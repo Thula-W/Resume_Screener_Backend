@@ -5,7 +5,7 @@ import { JobData } from "../../types";
 export const ANCHOR_BATCH_SIZE = 7;
 
 export const calculateTopN = (totalResumes: number): number => {
-  return Math.max(Math.ceil(totalResumes * 0.1), 5);
+  return Math.min(Math.max(Math.ceil(totalResumes * 0.1), 5), totalResumes);
 };
 
 export const fetchTopScreeningResults = async (jobId: string, topN: number) => {
