@@ -22,3 +22,32 @@ export interface JobData {
   skillsText: string | null;
   experienceText: string | null;
 }
+
+export interface ChunkRow {
+  resume_id: string;
+  skills_sem:  number;
+  skills_kw:   number;
+  exp_sem:     number;
+  exp_kw:      number;
+  bio_sem:     number;
+  bio_kw:      number;
+}
+
+export interface ResumeScore {
+  resumeId:        string;
+  skillScore:      number;
+  experienceScore: number;
+  bioScore:        number;
+  finalScore:      number;
+  // explanation:     string;
+}
+
+export interface BatchResult {
+  total:      number;
+  succeeded:  number;
+  failed:     number;
+  skipped:    number;   // resumes with suspiciously zero scores (bad embedding)
+  scores:     ResumeScore[];
+  failures:   { resumeId: string; error: string }[];
+  durationMs: number;
+}

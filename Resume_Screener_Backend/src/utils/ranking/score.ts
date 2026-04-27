@@ -18,6 +18,8 @@
  */
 
 import {prisma} from "../../config/prisma"
+import { ChunkRow, ResumeScore, BatchResult } from "../../types";
+import { scoreChunkRRF } from "./scoreNew";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -28,39 +30,6 @@ const CONCURRENCY  = 3;    // parallel chunks per wave (3 × 50 = 150 resumes/wa
 const MAX_RETRIES  = 3;    // retry attempts on transient errors
 const BASE_DELAY   = 500;  // ms — doubles each retry (500, 1000, 2000)
 const MODEL_VERSION = "sql-pgvector-v1";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface ChunkRow {
-  resume_id: string;
-  skills_sem:  number;
-  skills_kw:   number;
-  exp_sem:     number;
-  exp_kw:      number;
-  bio_sem:     number;
-  bio_kw:      number;
-}
-
-export interface ResumeScore {
-  resumeId:        string;
-  skillScore:      number;
-  experienceScore: number;
-  bioScore:        number;
-  finalScore:      number;
-  explanation:     string;
-}
-
-export interface BatchResult {
-  total:      number;
-  succeeded:  number;
-  failed:     number;
-  skipped:    number;   // resumes with suspiciously zero scores (bad embedding)
-  scores:     ResumeScore[];
-  failures:   { resumeId: string; error: string }[];
-  durationMs: number;
-}
 
 // ---------------------------------------------------------------------------
 // SQL — scores a chunk of up to 50 resumes in one round-trip
@@ -159,7 +128,7 @@ async function scoreChunk(
       experienceScore: round(experienceScore),
       bioScore:        round(bioScore),
       finalScore:      round(finalScore),
-      explanation:     buildExplanation(skillScore, experienceScore, bioScore, finalScore),
+      // explanation:     buildExplanation(skillScore, experienceScore, bioScore, finalScore),
     });
   }
 
@@ -355,7 +324,8 @@ export async function scoreSingleResume(
   resumeId: string,
   jobId: string
 ): Promise<ResumeScore> {
-  const { scores, skipped } = await scoreChunk(jobId, [resumeId]);
+  // const { scores, skipped } = await scoreChunk(jobId, [resumeId]);
+  const { scores, skipped } = await scoreChunkRRF(jobId, [resumeId]);  // the new approach using tsvector and RRF
 
   if (skipped.includes(resumeId)) {
     throw new Error(
