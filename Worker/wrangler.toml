@@ -43,7 +43,7 @@ queue    = "rerank-chunks"
 [[queues.consumers]]
 queue             = "resume-extract"
 max_batch_size    = 19
-max_batch_timeout = 5
+max_batch_timeout = 10
 
 [[queues.consumers]]
 queue             = "rerank-job"
@@ -53,7 +53,7 @@ max_batch_timeout = 1
 [[queues.consumers]]
 queue             = "rerank-chunks"
 max_batch_size    = 5
-max_batch_timeout = 3
+max_batch_timeout = 5
 
 [[queues.producers]]
 binding  = "RERANK_FINALIZE"

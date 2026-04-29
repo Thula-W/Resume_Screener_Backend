@@ -39,5 +39,6 @@ export const processResume = async (resumeId: string, jobId: string, constraints
   } catch (err) {
     // Processing failure doesn't fail the resume — embedding succeeded
     console.error(`Processing failed for ${resumeId}`, err);
+    throw err;
   }
 };

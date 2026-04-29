@@ -21,7 +21,7 @@ interface JobData {
 }
 
 interface ExtractMessage   { resumeId: string; jobId: string; }
-interface BatchItemResult  { resumeId: string; jobId: string; outcome: 'processed' | 'failed'; }
+interface BatchItemResult  { resumeId: string; jobId: string; outcome: 'processed' | 'failed'; retriable?: boolean; }
 interface RerankChunkMessage {
   jobId:       string;
   resumeIds:   string[];  // regular chunk IDs
@@ -37,6 +37,71 @@ export class MyBackendContainer extends Container {
   defaultPort = 8080;
   sleepAfter  = '10m';
   enableInternet = true;
+}
+
+async function fetchWithRetry(
+  env: Env,
+  slot: string,
+  url: string,
+  method: string,
+  headers?: any,
+  reqbody?: any,
+  maxAttempts = 4,
+  baseDelayMs = 500
+): Promise<Response> {
+  let lastErr: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const container = getContainer(env.MY_BACKEND, slot);
+      const res = await container.fetch(
+        new Request(url, {
+          method: method,
+          headers: headers,
+          body: JSON.stringify(reqbody), // re-serialized fresh each time
+        })
+      );
+
+      if (res.ok) return res;
+
+      const body = await res.text();
+
+      // Container not ready yet — wait and retry
+      const isContainerNotReady =
+        res.status === 503 ||
+        body.includes('no container instance') ||
+        body.includes('try again later');
+
+      if (isContainerNotReady) {
+        const delay = baseDelayMs * 2 ** (attempt - 1); // 500, 1000, 2000, 4000ms
+        console.warn(`[extract] slot=${slot} not ready (attempt ${attempt}/${maxAttempts}), waiting ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+        lastErr = new Error(`Container not ready: ${body}`);
+        continue;
+      }
+
+      // Non-retryable error — return as-is
+      return new Response(body, { status: res.status });
+
+    } catch (err) {
+      const msg = String(err);
+      const isContainerNotReady =
+        msg.includes('no container instance') ||
+        msg.includes('try again later');
+
+      if (isContainerNotReady) {
+        const delay = baseDelayMs * 2 ** (attempt - 1);
+        console.warn(`[extract] slot=${slot} threw not-ready (attempt ${attempt}/${maxAttempts}), waiting ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+        lastErr = err;
+        continue;
+      }
+
+      throw err; // unknown error — don't swallow
+    }
+  }
+
+  throw lastErr; // exhausted all attempts
 }
 
 export class JobProgressTracker extends DurableObject {
@@ -246,52 +311,136 @@ export default {
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
 
     if (batch.queue === 'resume-extract') {
-      // Round-robin across pool slots — no job affinity
+      // Map resumeId → original queue message for granular ack/retry
+      const msgMap = new Map<string, (typeof batch.messages)[number]>();
       const groups = new Map<string, ExtractMessage[]>();
 
       batch.messages.forEach((msg, i) => {
+        const m = msg.body as ExtractMessage;
         const slot = `worker-${i % POOL_SIZE}`;
         if (!groups.has(slot)) groups.set(slot, []);
-        groups.get(slot)!.push(msg.body as ExtractMessage);
+        groups.get(slot)!.push(m);
+        msgMap.set(m.resumeId, msg);  // ← keep reference to original msg
       });
 
-      await Promise.all([...groups.entries()].map(async ([slot, messages]) => {
-        const container = getContainer(env.MY_BACKEND, slot);
+      console.log(`[extract] batch size=${batch.messages.length} slots=${groups.size}`);
 
-        const res = await container.fetch(
-          new Request('http://dummy/internal/process-batch', {
-            method:  'POST',
-            headers: { 'content-type': 'application/json', 'x-internal': '1' },
-            body:    JSON.stringify({ messages }),
-          })
-        );
+      // allSettled — one slot failure does NOT affect others
+      await Promise.allSettled(
+        [...groups.entries()].map(async ([slot, messages]) => {
+          console.log(`[extract] slot=${slot} sending ${messages.length} resumes`);
 
-        if (!res.ok) {
-          // Let queue retry the whole batch
-          throw new Error(`Container ${slot} failed: ${res.status}`);
-        }
+          let res: Response;
+          try {
+            res =await fetchWithRetry(env, slot, 'http://dummy/internal/process-batch','POST',
+              { 'content-type': 'application/json', 'x-internal': '1' }, { messages });
 
-        const { results } = await res.json() as { results: BatchItemResult[] };
-
-        // Group outcomes by jobId → call each job's DO once per batch
-        const byJob = new Map<string, { processed: number; failed: number }>();
-        for (const r of results) {
-          if (!byJob.has(r.jobId)) byJob.set(r.jobId, { processed: 0, failed: 0 });
-          const counts = byJob.get(r.jobId)!;
-          r.outcome === 'processed' ? counts.processed++ : counts.failed++;
-        }
-
-        await Promise.all([...byJob.entries()].map(async ([jobId, counts]) => {
-          const doId    = env.JOB_TRACKER.idFromName(jobId);
-          const tracker = env.JOB_TRACKER.get(doId);
-          const result  = await tracker.increment(jobId, counts.processed, counts.failed);
-
-          if (result.shouldTriggerScoring) {
-            await env.RERANK_QUEUE.send({ jobId });
+            // const container = getContainer(env.MY_BACKEND, slot);
+            // res = await container.fetch(
+            //   new Request('http://dummy/internal/process-batch', {
+            //     method: 'POST',
+            //     headers: { 'content-type': 'application/json', 'x-internal': '1' },
+            //     body: JSON.stringify({ messages }),
+            //   })
+            // );
+          } catch (err) {
+            // Container unreachable / crashed — retry all messages in this slot
+            console.error(`[extract] slot=${slot} threw: ${err}`);
+            for (const m of messages) {
+              msgMap.get(m.resumeId)?.retry();
+            }
+            return; // don't throw — let other slots succeed
           }
-        }));
-      }));
+
+          if (!res.ok) {
+            const errBody = await res.text();
+            console.error(`[extract] slot=${slot} status=${res.status} body=${errBody}`);
+            // Container returned error — retry all in this slot
+            for (const m of messages) {
+              msgMap.get(m.resumeId)?.retry();
+            }
+            return;
+          }
+
+          const { results } = await res.json() as { results: BatchItemResult[] };
+          console.log(`[extract] slot=${slot} results=${JSON.stringify(results)}`);
+
+          // Per-resume granular ack/retry based on what container reports
+          for (const r of results) {
+            if (r.outcome === 'processed') {
+              msgMap.get(r.resumeId)?.ack();
+            } else {
+              if (r.retriable) {
+                console.warn(`[extract] resumeId=${r.resumeId} failed, re-enqueueing`);
+                await env.EXTRACT_QUEUE.send(
+                  { resumeId: r.resumeId, jobId: r.jobId },
+                  { delaySeconds: 5 }
+                );
+              } else {
+                console.error(`[extract] resumeId=${r.resumeId} permanently failed, dropping`);
+              }
+              msgMap.get(r.resumeId)?.ack(); // ack either way — retry is via new message
+            }
+          }
+
+          // Handle any resumeIds the container didn't report back at all
+          const reportedIds = new Set(results.map(r => r.resumeId));
+          for (const m of messages) {
+            if (!reportedIds.has(m.resumeId)) {
+              console.warn(`[extract] resumeId=${m.resumeId} missing from container response, retrying`);
+              msgMap.get(m.resumeId)?.retry();
+            }
+          }
+        })
+      );
     }
+    // if (batch.queue === 'resume-extract') {
+    //   // Round-robin across pool slots — no job affinity
+    //   const groups = new Map<string, ExtractMessage[]>();
+
+    //   batch.messages.forEach((msg, i) => {
+    //     const slot = `worker-${i % POOL_SIZE}`;
+    //     if (!groups.has(slot)) groups.set(slot, []);
+    //     groups.get(slot)!.push(msg.body as ExtractMessage);
+    //   });
+
+    //   await Promise.all([...groups.entries()].map(async ([slot, messages]) => {
+    //     const container = getContainer(env.MY_BACKEND, slot);
+
+    //     const res = await container.fetch(
+    //       new Request('http://dummy/internal/process-batch', {
+    //         method:  'POST',
+    //         headers: { 'content-type': 'application/json', 'x-internal': '1' },
+    //         body:    JSON.stringify({ messages }),
+    //       })
+    //     );
+
+    //     if (!res.ok) {
+    //       // Let queue retry the whole batch
+    //       throw new Error(`Container ${slot} failed: ${res.status}`);
+    //     }
+
+    //     const { results } = await res.json() as { results: BatchItemResult[] };
+
+    //     // Group outcomes by jobId → call each job's DO once per batch
+    //     const byJob = new Map<string, { processed: number; failed: number }>();
+    //     for (const r of results) {
+    //       if (!byJob.has(r.jobId)) byJob.set(r.jobId, { processed: 0, failed: 0 });
+    //       const counts = byJob.get(r.jobId)!;
+    //       r.outcome === 'processed' ? counts.processed++ : counts.failed++;
+    //     }
+
+    //     await Promise.all([...byJob.entries()].map(async ([jobId, counts]) => {
+    //       const doId    = env.JOB_TRACKER.idFromName(jobId);
+    //       const tracker = env.JOB_TRACKER.get(doId);
+    //       const result  = await tracker.increment(jobId, counts.processed, counts.failed);
+
+    //       if (result.shouldTriggerScoring) {
+    //         await env.RERANK_QUEUE.send({ jobId });
+    //       }
+    //     }));
+    //   }));
+    // }
 
     // Inside worker queue() — add alongside existing handlers
     if (batch.queue === 'rerank-chunks') {

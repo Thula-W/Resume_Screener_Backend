@@ -30,6 +30,7 @@ model Resume {
   createdAt    DateTime @default(now())
   batchId      String?
   content      String?
+  retryCount   Int  @default(0)
 
   batch        UploadBatch? @relation(fields: [batchId], references: [id])
   job          Job      @relation(fields: [jobId], references: [id])
