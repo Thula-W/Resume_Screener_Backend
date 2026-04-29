@@ -51,3 +51,8 @@ export interface BatchResult {
   failures:   { resumeId: string; error: string }[];
   durationMs: number;
 }
+
+export interface RerankSaveItem {
+  screeningResultId: string;
+  rerankedScore: number;
+}

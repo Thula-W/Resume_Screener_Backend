@@ -93,7 +93,9 @@ model ResumeEmbedding {
   text       String
   embedding  Unsupported("vector(1536)")
   createdAt  DateTime   @default(now())
+  text_tsvector Unsupported("tsvector")? @default(dbgenerated())
 
+  @@index([text_tsvector], map: "idx_resume_embedding_fts", type: Gin)
   resume     Resume     @relation(fields: [resumeId], references: [id])
 }
 
@@ -119,6 +121,7 @@ model Evaluations {
   jobId      String   
   rawText    String
   verdict    String
+  signal     String?
   createdAt  DateTime @default(now())
 
   job          Job      @relation(fields: [jobId], references: [id])

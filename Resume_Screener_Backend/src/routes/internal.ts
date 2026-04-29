@@ -6,6 +6,7 @@ import { getJobTotal, validateTrigger } from '../controllers/resume.controlls';
 import { handleRerankJob, handleRerankChunk, handleRerankFinalize } from '../services/rerank.service';
 import { authenticate } from '../middleware/auth';
 import { JobData } from '../types';
+import { handleCohereRerankJob } from '../services/cohereRerank';
 
 const router = Router();
 
@@ -22,7 +23,8 @@ router.post('/validate-trigger', authenticate, validateTrigger);
 router.post('/rerank-job', async (req, res) => {
   const { jobId } = req.body;
   try {
-    await handleRerankJob(jobId);
+    // await handleRerankJob(jobId); // this is the earlier implementation of using gpt reranking (uncomment to use, nothing has to change)
+    await handleCohereRerankJob(jobId)
     res.json({ ok: true });
   } catch (err) {
     console.error('Rerank job failed:', err);
