@@ -19,12 +19,11 @@ router.get('/job-total', getJobTotal);
 // Called by worker before calling DO for trigger-scoring
 router.post('/validate-trigger', authenticate, validateTrigger);
 
-// Called by worker rerank-job queue consumer
+// Called by worker rerank-job queue consumer  (the earlier implementaion using gpt)
 router.post('/rerank-job', async (req, res) => {
   const { jobId } = req.body;
   try {
-    // await handleRerankJob(jobId); // this is the earlier implementation of using gpt reranking (uncomment to use, nothing has to change)
-    await handleCohereRerankJob(jobId)
+    await handleRerankJob(jobId); 
     res.json({ ok: true });
   } catch (err) {
     console.error('Rerank job failed:', err);

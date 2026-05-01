@@ -1,8 +1,9 @@
-import type { Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../config/prisma";
 import { combineResumeText, convertJsonToText, extractJson, extractTextFromPDF } from "../utils/resumeHelpers";
 import type {AddEvaluationsRequest, EvaluationPair} from "../types"
 import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers";
+import { JobStatus } from "@prisma/client";
 
 export const addJob = async (req: Request, res: Response) => {
   const { title, overview, skills, bio, experience, constraints } = req.body ?? {};
@@ -58,6 +59,38 @@ try {
       res.status(400).json({ success: false, error: err.message });
     }
   };
+
+export const checkJobStatus = async (req: Request, res: Response, next: NextFunction) => {
+  const { jobId } = req.body;
+  const firebaseUid = (req as any).user?.id;
+
+  if (!firebaseUid) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    let user = await prisma.user.findUnique({
+      where: { firebaseUid },
+    });
+
+    if (!user){
+      throw new Error("You must be logged in to check job status");
+    }
+    const job = await prisma.job.findUnique({
+      where: { id: jobId, userId: user?.id },
+      select: { status: true },
+    });
+    
+    if (job?.status === JobStatus.SCORED){
+      next();
+    }
+    else{
+      res.status(400).json({ error: "Job not ready for reranking" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err });
+  }
+};
 
 //-------------------------------- helpers --------------------------------
 const parseEvaluationRequest = async (
