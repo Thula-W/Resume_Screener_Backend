@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { processResume } from '../services/resumeProcess.service';
+import { JobStatus } from '@prisma/client';
 
 export const processBatch = async (req: Request, res: Response) => {
   const { messages } = req.body;
@@ -64,10 +65,53 @@ export const processBatch = async (req: Request, res: Response) => {
         }
         return { resumeId, jobId, outcome: 'failed' as const, retriable: true };
       }
+      finally{
+        await checkAndFinalizeJob(jobId);
+      }
     })
   );
 
   // Filter out nulls (skipped — claimed by another worker)
   const finalResults = results.filter(Boolean);
   return res.json({ results: finalResults });
+};
+
+
+const checkAndFinalizeJob = async (jobId: string) => {
+  // 1. Get count of resumes that are NOT yet finished
+  // Excluding: SCORED, FAILED, DISQUALIFIED
+  const pendingCount = await prisma.resume.count({
+    where: {
+      jobId,
+      NOT: {
+        status: { in: ['SCORED', 'FAILED', 'DISQUALIFIED'] },
+      },
+    },
+  });
+
+  // Only proceed to finalize if no resumes are left in a pending state
+  if (pendingCount === 0) {
+    // 2. Fetch the job's totalResumes and the count of resumes in the final statuses
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { totalResumes: true },
+    });
+
+    const finishedResumesCount = await prisma.resume.count({
+      where: {
+        jobId,
+        status: { in: ['SCORED', 'FAILED', 'DISQUALIFIED'] },
+      },
+    });
+
+    if (!job) return;
+
+    // 3. Determine final status  
+    if (finishedResumesCount === job.totalResumes && finishedResumesCount > 0) {
+      await prisma.job.update({
+      where: { id: jobId, status: JobStatus.PROCESSING },
+      data: { status: JobStatus.SCORED },
+    });
+    }
+  }
 };

@@ -190,7 +190,7 @@ export const validateTrigger = async (req: AuthRequest, res: Response) => {
   if (!job)                          return res.status(404).json({ error: 'Job not found' });
   if (!user || job.userId !== user.id)  return res.status(403).json({ error: 'Forbidden' });
   if (job.totalResumes === 0)        return res.status(400).json({ error: 'No resumes uploaded yet' });
-  if (job.status === JobStatus.EMBEDDING_DONE)       return res.status(400).json({ error: 'Already scored' });
+  if (job.status === JobStatus.RANKED)       return res.status(400).json({ error: 'Already scored' });
 
   // Mark scoringRequested in DB as well (source of truth backup)
   await prisma.job.update({

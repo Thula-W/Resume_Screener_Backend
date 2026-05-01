@@ -144,7 +144,7 @@ enum ResumeStatus {
 enum JobStatus {
   PENDING
   PROCESSING      // at least one batch embedding
-  EMBEDDING_DONE  // all embedded, awaiting trigger
+  SCORED         // all scored, awaiting trigger
   RANKING         // pipeline 2 running
   RANKED
   FAILED

@@ -47,7 +47,7 @@ async function fetchWithRetry(
   headers?: any,
   reqbody?: any,
   maxAttempts = 4,
-  baseDelayMs = 500
+  baseDelayMs = 1500
 ): Promise<Response> {
   let lastErr: unknown;
 
@@ -73,7 +73,7 @@ async function fetchWithRetry(
         body.includes('try again later');
 
       if (isContainerNotReady) {
-        const delay = baseDelayMs * 2 ** (attempt - 1); // 500, 1000, 2000, 4000ms
+        const delay = baseDelayMs * 2 ** (attempt - 1); // 1500, 3000, 6000, 12000ms
         console.warn(`[extract] slot=${slot} not ready (attempt ${attempt}/${maxAttempts}), waiting ${delay}ms`);
         await new Promise(r => setTimeout(r, delay));
         lastErr = new Error(`Container not ready: ${body}`);
