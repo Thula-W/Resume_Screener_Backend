@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authenticate } from "../middleware/auth";
 
-import { addJob, addEvaluations, checkJobStatus } from "../controllers/job.controlls";
+import { addJob, addEvaluations, checkJobStatus, deleteJob } from "../controllers/job.controlls";
 import { upload } from "../middleware/multer";
 import { handleCohereRerankJob } from "../services/cohereRerank";
 
@@ -25,5 +25,7 @@ router.post('/rerank-job',authenticate, checkJobStatus, async (req, res) => {
     res.status(500).json({ error: String(err) });
   }
 });
+
+router.post('/delete-job', authenticate, deleteJob);
 
 export default router;

@@ -92,6 +92,60 @@ export const checkJobStatus = async (req: Request, res: Response, next: NextFunc
   }
 };
 
+export const deleteJob = async (req: Request, res: Response) => {
+  const { jobId } = req.body;
+  const firebaseUid = (req as any).user?.id;
+
+  const user = await prisma.user.findUnique({
+    where: { firebaseUid },
+  });
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId, userId: user?.id },
+  });
+  if (!firebaseUid || !user || !job) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    console.log(`Starting full purge for Job ID: ${jobId}`);
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Get all Resume IDs linked to this job
+      const resumes = await tx.resume.findMany({
+        where: { jobId },
+        select: { id: true },
+      });
+      const resumeIds = resumes.map((r) => r.id);
+
+      console.log(`- Found ${resumeIds.length} resumes. Clearing child records...`);
+
+      // 2. Delete downstream Resume dependencies
+      await tx.resumeEmbedding.deleteMany({ where: { resumeId: { in: resumeIds } } });
+      await tx.screeningResult.deleteMany({ where: { resumeId: { in: resumeIds } } });
+      await tx.parsedResume.deleteMany({ where: { resumeId: { in: resumeIds } } });
+      await tx.batchFailure.deleteMany({ where: { resumeId: { in: resumeIds } } });
+
+      // 3. Delete Job-specific dependencies
+      await tx.evaluations.deleteMany({ where: { jobId } });
+      await tx.rerankChunkResult.deleteMany({ where: { jobId } });
+
+      // 4. Delete Resumes
+      // We do this after clearing child records but before deleting Batches/Jobs
+      await tx.resume.deleteMany({ where: { jobId } });
+
+      // 5. Delete Batches
+      await tx.uploadBatch.deleteMany({ where: { jobId } });
+
+      // 6. Finally, delete the Job itself
+      await tx.job.delete({ where: { id: jobId } });
+    });
+
+    res.status(200).json({ success: true, message: `Job ${jobId} and all associated data deleted successfully.` });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  } 
+}
+
 //-------------------------------- helpers --------------------------------
 const parseEvaluationRequest = async (
   req: Request
