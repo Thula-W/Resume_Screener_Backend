@@ -61,6 +61,7 @@ export const uploadIntent = async (req: AuthRequest, res: Response) => {
             jobId,
             storagePath,
             status: "PENDING",
+            name: fileName,
           },
         });
 

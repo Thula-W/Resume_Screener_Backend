@@ -22,7 +22,7 @@ model User {
 model Resume {
   id           String   @id @default(uuid())
   jobId        String
-
+  name         String?
   storagePath  String
   status       ResumeStatus @default(PENDING)
 
@@ -31,6 +31,7 @@ model Resume {
   batchId      String?
   content      String?
   retryCount   Int  @default(0)
+
 
   batch        UploadBatch? @relation(fields: [batchId], references: [id])
   job          Job      @relation(fields: [jobId], references: [id])
