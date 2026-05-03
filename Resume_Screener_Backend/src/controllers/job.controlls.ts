@@ -1,9 +1,9 @@
-import type { Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../config/prisma";
-import { jobEmbeddingsQueue } from "../utils/queue";
 import { combineResumeText, convertJsonToText, extractJson, extractTextFromPDF } from "../utils/resumeHelpers";
 import type {AddEvaluationsRequest, EvaluationPair} from "../types"
 import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers";
+import { JobStatus } from "@prisma/client";
 
 export const addJob = async (req: Request, res: Response) => {
   const { title, overview, skills, bio, experience, constraints } = req.body ?? {};
@@ -42,16 +42,7 @@ export const addJob = async (req: Request, res: Response) => {
     withRetry(() => processJobEmbedding({ jobId: job.id, skills, bio, experience })).catch((err) =>
       console.error(`Embedding failed for job ${job.id}:`, err)
     );
-
-
-    //------- redis que approach--------------------
-    // await jobEmbeddingsQueue.add("process-job-embeddings", {
-    //   jobId: job.id,
-    //   skills,
-    //   bio,
-    //   experience,
-    // });
-    
+ 
     res.status(201).json(job);
   } catch (err) {
     console.error(err);
@@ -68,6 +59,92 @@ try {
       res.status(400).json({ success: false, error: err.message });
     }
   };
+
+export const checkJobStatus = async (req: Request, res: Response, next: NextFunction) => {
+  const { jobId } = req.body;
+  const firebaseUid = (req as any).user?.id;
+
+  if (!firebaseUid) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    let user = await prisma.user.findUnique({
+      where: { firebaseUid },
+    });
+
+    if (!user){
+      throw new Error("You must be logged in to check job status");
+    }
+    const job = await prisma.job.findUnique({
+      where: { id: jobId, userId: user?.id },
+      select: { status: true },
+    });
+    
+    if (job?.status === JobStatus.SCORED){
+      next();
+    }
+    else{
+      res.status(400).json({ error: "Job not ready for reranking" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err });
+  }
+};
+
+export const deleteJob = async (req: Request, res: Response) => {
+  const { jobId } = req.body;
+  const firebaseUid = (req as any).user?.id;
+
+  const user = await prisma.user.findUnique({
+    where: { firebaseUid },
+  });
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId, userId: user?.id },
+  });
+  if (!firebaseUid || !user || !job) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    console.log(`Starting full purge for Job ID: ${jobId}`);
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Get all Resume IDs linked to this job
+      const resumes = await tx.resume.findMany({
+        where: { jobId },
+        select: { id: true },
+      });
+      const resumeIds = resumes.map((r) => r.id);
+
+      console.log(`- Found ${resumeIds.length} resumes. Clearing child records...`);
+
+      // 2. Delete downstream Resume dependencies
+      await tx.resumeEmbedding.deleteMany({ where: { resumeId: { in: resumeIds } } });
+      await tx.screeningResult.deleteMany({ where: { resumeId: { in: resumeIds } } });
+      await tx.parsedResume.deleteMany({ where: { resumeId: { in: resumeIds } } });
+      await tx.batchFailure.deleteMany({ where: { resumeId: { in: resumeIds } } });
+
+      // 3. Delete Job-specific dependencies
+      await tx.evaluations.deleteMany({ where: { jobId } });
+      await tx.rerankChunkResult.deleteMany({ where: { jobId } });
+
+      // 4. Delete Resumes
+      // We do this after clearing child records but before deleting Batches/Jobs
+      await tx.resume.deleteMany({ where: { jobId } });
+
+      // 5. Delete Batches
+      await tx.uploadBatch.deleteMany({ where: { jobId } });
+
+      // 6. Finally, delete the Job itself
+      await tx.job.delete({ where: { id: jobId } });
+    });
+
+    res.status(200).json({ success: true, message: `Job ${jobId} and all associated data deleted successfully.` });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  } 
+}
 
 //-------------------------------- helpers --------------------------------
 const parseEvaluationRequest = async (

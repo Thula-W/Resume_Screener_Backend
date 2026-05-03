@@ -4,6 +4,7 @@ import cors from "cors";
 import userRoutes from "./routes/userRoutes";
 import resumeRoutes from "./routes/resumeRoutes";
 import jobRoutes from "./routes/jobRoutes";
+import internalRoutes from "./routes/internal";
 
 const app = express();
 
@@ -13,5 +14,6 @@ app.use(express.json());
 app.use("/api/users", userRoutes);
 app.use('/api/resumes',resumeRoutes)
 app.use('/api/jobs',jobRoutes)
+app.use('/internal', internalRoutes);
 
 export default app;

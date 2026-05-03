@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
@@ -19,32 +18,11 @@ model User {
   jobs        Job[]
 }
 
-model Job {
-  id           String   @id @default(uuid())
-  userId       String
-  title        String
-  overview     String?
-  constraints  Json?
-  createdAt    DateTime @default(now())
-  resumeCount  Int?
-
-  // Embedding fields
-  skillsText       String?
-  bioText          String?
-  experienceText   String?
-  skillsEmbedding  Unsupported("vector(1536)")?
-  bioEmbedding     Unsupported("vector(1536)")?
-  experienceEmbedding Unsupported("vector(1536)")?
-
-  user         User     @relation(fields: [userId], references: [id])
-  resumes      Resume[]
-  evaluations  Evaluations[]
-}
 
 model Resume {
   id           String   @id @default(uuid())
   jobId        String
-
+  name         String?
   storagePath  String
   status       ResumeStatus @default(PENDING)
 
@@ -52,6 +30,8 @@ model Resume {
   createdAt    DateTime @default(now())
   batchId      String?
   content      String?
+  retryCount   Int  @default(0)
+
 
   batch        UploadBatch? @relation(fields: [batchId], references: [id])
   job          Job      @relation(fields: [jobId], references: [id])
@@ -61,14 +41,6 @@ model Resume {
   embeddings   ResumeEmbedding[]
 }
 
-enum ResumeStatus {
-  PENDING
-  UPLOADED
-  PARSED
-  EMBEDDED
-  READY
-  DISQUALIFIED
-}
 
 model UploadBatch {
   id              String        @id @default(uuid())
@@ -123,7 +95,9 @@ model ResumeEmbedding {
   text       String
   embedding  Unsupported("vector(1536)")
   createdAt  DateTime   @default(now())
+  text_tsvector Unsupported("tsvector")? @default(dbgenerated())
 
+  @@index([text_tsvector], map: "idx_resume_embedding_fts", type: Gin)
   resume     Resume     @relation(fields: [resumeId], references: [id])
 }
 
@@ -149,7 +123,71 @@ model Evaluations {
   jobId      String   
   rawText    String
   verdict    String
+  signal     String?
   createdAt  DateTime @default(now())
 
   job          Job      @relation(fields: [jobId], references: [id])
+}
+
+
+enum ResumeStatus {
+  PENDING
+  UPLOADED
+  PROCESSING    // ← new: atomic claim in flight
+  PARSED
+  EMBEDDED
+  SCORED        // ← new: scored after embedding
+  READY         // reranked
+  DISQUALIFIED
+  FAILED        // ← new: exhausted retries
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING      // at least one batch embedding
+  SCORED         // all scored, awaiting trigger
+  RANKING         // pipeline 2 running
+  RANKED
+  FAILED
+}
+
+model Job {
+  id           String    @id @default(uuid())
+  userId       String
+  title        String
+  overview     String?
+  constraints  Json?
+  createdAt    DateTime  @default(now())
+
+  // ← replace resumeCount with these
+  totalResumes     Int       @default(0)  // incremented per batch
+  processedCount   Int       @default(0)  // mirror of DO counter
+  failedCount      Int       @default(0)
+  status           JobStatus @default(PENDING)
+  scoringRequested Boolean   @default(false)
+
+  skillsText          String?
+  bioText             String?
+  experienceText      String?
+  skillsEmbedding     Unsupported("vector(1536)")?
+  bioEmbedding        Unsupported("vector(1536)")?
+  experienceEmbedding Unsupported("vector(1536)")?
+
+  user        User          @relation(fields: [userId], references: [id])
+  resumes     Resume[]
+  evaluations Evaluations[]
+}
+
+model RerankChunkResult {
+  id          String   @id @default(uuid())
+  jobId       String
+  chunkIndex  Int
+  resumeId    String
+  score       Float
+  explanation String
+  isAnchor    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([jobId])
+  @@index([jobId, chunkIndex])
 }

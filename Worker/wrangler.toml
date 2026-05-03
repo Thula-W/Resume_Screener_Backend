@@ -1,0 +1,69 @@
+name = "my-backend-worker"
+main = "src/worker.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "MY_BACKEND"
+class_name = "MyBackendContainer"
+
+[[durable_objects.bindings]]
+name = "JOB_TRACKER"
+class_name = "JobProgressTracker"
+
+[[durable_objects.bindings]]
+name = "RERANK_TRACKER"
+class_name = "RerankProgressTracker"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MyBackendContainer"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["JobProgressTracker", "RerankProgressTracker"]
+
+[[containers]]
+name = "my_backend"
+class_name = "MyBackendContainer"
+image = "../Resume_Screener_Backend/Dockerfile"
+
+[[queues.producers]]
+binding  = "EXTRACT_QUEUE"
+queue    = "resume-extract"
+
+[[queues.producers]]
+binding  = "RERANK_QUEUE"
+queue    = "rerank-job"
+
+[[queues.producers]]
+binding  = "RERANK_CHUNKS"
+queue    = "rerank-chunks"
+
+[[queues.consumers]]
+queue             = "resume-extract"
+max_batch_size    = 19
+max_batch_timeout = 10
+
+[[queues.consumers]]
+queue             = "rerank-job"
+max_batch_size    = 1
+max_batch_timeout = 1
+
+[[queues.consumers]]
+queue             = "rerank-chunks"
+max_batch_size    = 5
+max_batch_timeout = 5
+
+[[queues.producers]]
+binding  = "RERANK_FINALIZE"
+queue    = "rerank-finalize"
+
+[[queues.consumers]]
+queue             = "rerank-finalize"
+max_batch_size    = 1
+max_batch_timeout = 1
+
+[vars]
+NODE_ENV = "production"
+PORT = 8080
