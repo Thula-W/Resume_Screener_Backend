@@ -144,11 +144,15 @@ async function fetchSignalsForJob(jobId: string): Promise<string[]> {
 async function saveRerankedResults(
   items: RerankSaveItem[]
 ): Promise<void> {
-  await prisma.$transaction(
+
+  await Promise.all(
     items.map(({ screeningResultId, rerankedScore }) =>
       prisma.screeningResult.update({
         where: { id: screeningResultId },
         data: { rerankedScore },
+      }).catch(err => {
+        // Log individual errors so one bad ID doesn't crash the whole loop
+        console.error(`Failed to update score for ID ${screeningResultId}:`, err);
       })
     )
   );
@@ -200,7 +204,7 @@ async function callCohereRerank(
 // Main handler
 // ---------------------------------------------------------------------------
 
-export async function handleCohereRerankJob(jobId: string): Promise<void> {
+export async function handleCohereRerankJob(jobId: string): Promise<any> {
   // 1. Load job total count and metadata in parallel
   const [job, jobData] = await Promise.all([
     prisma.job.findUnique({
@@ -222,12 +226,12 @@ export async function handleCohereRerankJob(jobId: string): Promise<void> {
   // 2. Mark job as ranking
   await prisma.job.update({
     where: { id: jobId },
-    data: { status: JobStatus.RANKING },
+    data: { status: JobStatus.RERANKING },
   });
 
   // 3. Fetch top screening results + recruiter signals in parallel
   const [topResults, signals] = await Promise.all([
-    fetchTopScreeningResults(jobId, topN),
+    fetchTopScreeningResults(jobId, topN, "FINAL"),
     fetchSignalsForJob(jobId),
   ]);
 
@@ -235,9 +239,9 @@ export async function handleCohereRerankJob(jobId: string): Promise<void> {
     console.warn(`[reranker] No screening results found for job ${jobId}`);
     await prisma.job.update({
       where: { id: jobId },
-      data: { status: JobStatus.RANKED },
+      data: { status: JobStatus.RERANKED },
     });
-    return;
+    return {shouldRank : false};
   }
 
   // 4. Map screeningResult.id keyed by resumeId for later save
@@ -259,9 +263,9 @@ export async function handleCohereRerankJob(jobId: string): Promise<void> {
     console.warn(`[reranker] No resume content available for job ${jobId}`);
     await prisma.job.update({
       where: { id: jobId },
-      data: { status: JobStatus.RANKED },
+      data: { status: JobStatus.RERANKED },
     });
-    return;
+    return {shouldRank : false};
   }
 
   const skippedCount = resumeIds.length - candidates.length;
@@ -291,10 +295,11 @@ export async function handleCohereRerankJob(jobId: string): Promise<void> {
   // 10. Mark job as ranked
   await prisma.job.update({
     where: { id: jobId },
-    data: { status: JobStatus.RANKED },
+    data: { status: JobStatus.RERANKED },
   });
 
   console.log(
     `[reranker] job=${jobId} complete — ${toSave.length} resumes reranked`
   );
+  return { shouldRank: true };
 }

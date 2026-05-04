@@ -38,7 +38,7 @@ export async function handleRerankJob(jobId: string): Promise<void> {
   if (topN <= SMALL_THRESHOLD) {
     const [evaluations, topResults] = await Promise.all([
       fetchEvaluationsForJob(jobId),
-      fetchTopScreeningResults(jobId, topN),
+      fetchTopScreeningResults(jobId, topN, "RERANKED"),
     ]);
 
     const resumeIdToScreeningId = Object.fromEntries(
@@ -58,7 +58,7 @@ export async function handleRerankJob(jobId: string): Promise<void> {
       .filter((r) => resumeIdToScreeningId[r.resumeId])
       .map((r) => ({
         screeningResultId: resumeIdToScreeningId[r.resumeId],
-        rerankedScore: r.score,
+        azendlyScore: r.score,
         explanation: r.explanation,
       }));
 
@@ -79,10 +79,10 @@ export async function handleRerankJob(jobId: string): Promise<void> {
 // Preserves the anchor separation logic from the original
 // ─────────────────────────────────────────────────────────────────────────────
 async function fanOutRerankChunks(jobId: string, topN: number, jobData: JobData): Promise<void> {
-  const topResults = await fetchTopScreeningResults(jobId, topN);
+  const topResults = await fetchTopScreeningResults(jobId, topN, "RERANKED");
 
   // ── Select anchors (high / mid / low) — same logic as original ───────────
-  const anchors    = selectAnchors(topResults);
+  const anchors    = selectAnchors(topResults as { resumeId: string; id: string; rerankedScore: number | null;}[]);
   const anchorIds  = anchors.map((a) => a.resumeId);
   const anchorIdSet = new Set(anchorIds);
 
@@ -261,7 +261,7 @@ export async function handleRerankFinalize(jobId: string): Promise<void> {
 
   // ── Phase 3d: map back to screeningResult IDs and save ────────────────────
   const topN       = allResults.length;
-  const topResults = await fetchTopScreeningResults(jobId, topN);
+  const topResults = await fetchTopScreeningResults(jobId, topN, "RERANKED");
 
   const resumeIdToScreeningId = Object.fromEntries(
     topResults.map((r) => [r.resumeId, r.id])
@@ -271,7 +271,7 @@ export async function handleRerankFinalize(jobId: string): Promise<void> {
     .filter((r) => resumeIdToScreeningId[r.resumeId])
     .map((r) => ({
       screeningResultId: resumeIdToScreeningId[r.resumeId],
-      rerankedScore:     r.score,
+      azendlyScore:     r.score,
       explanation:       r.explanation,
     }));
 

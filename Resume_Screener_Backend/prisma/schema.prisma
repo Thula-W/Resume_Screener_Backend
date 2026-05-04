@@ -30,6 +30,7 @@ model Resume {
   createdAt    DateTime @default(now())
   batchId      String?
   content      String?
+  attributes   Json?
   retryCount   Int  @default(0)
 
 
@@ -110,6 +111,7 @@ model ScreeningResult {
   bioScore         Float
   finalScore       Float
   rerankedScore    Float?
+  azendlyScore     Float?
   explanation      String?
   modelVersion     String
   createdAt        DateTime @default(now())
@@ -148,6 +150,8 @@ enum JobStatus {
   SCORED         // all scored, awaiting trigger
   RANKING         // pipeline 2 running
   RANKED
+  RERANKING
+  RERANKED
   FAILED
 }
 

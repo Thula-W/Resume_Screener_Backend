@@ -4,6 +4,7 @@ import { authenticate } from "../middleware/auth";
 import { addJob, addEvaluations, checkJobStatus, deleteJob } from "../controllers/job.controlls";
 import { upload } from "../middleware/multer";
 import { handleCohereRerankJob } from "../services/cohereRerank";
+import { handleRerankJob } from "../services/rerank.service";
 
 const router = Router();
 
@@ -18,8 +19,12 @@ router.post('/:jobId/evals',authenticate, upload.fields([
 router.post('/rerank-job',authenticate, checkJobStatus, async (req, res) => {
   const { jobId } = req.body;
   try {
-    await handleCohereRerankJob(jobId)
-    res.json({ ok: true });
+    const result = await handleCohereRerankJob(jobId);
+    if (result.shouldRank) {
+      await handleRerankJob(jobId); 
+      res.json({ addedToRank : true });
+    }
+    res.json({ addedToRank : false });
   } catch (err) {
     console.error('Rerank job failed:', err);
     res.status(500).json({ error: String(err) });

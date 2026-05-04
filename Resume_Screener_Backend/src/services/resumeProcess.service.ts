@@ -21,7 +21,7 @@ export const processResume = async (resumeId: string, jobId: string, constraints
 
     await prisma.resume.update({
       where: { id: resumeId },
-      data:  { content, status },
+      data:  { content, status, attributes},
     });
 
     if (!qualified) return;

@@ -80,6 +80,7 @@ Extracurriculars: Map leadership roles or club involvements to define personalit
 Rules:
 - yearsOfExperience:
   - Identify all full-time professional roles with start and end dates
+  - If start date is present and end date is missing (or stated as "Present", or "Ongoing"), assume it's ongoing and calculate until current month
   - Calculate total experience in MONTHS (ignore overlaps if possible)
   - Convert to years using: years = months / 12
   - Return a decimal number rounded to 1 decimal place (e.g., 2.4, 0.8)

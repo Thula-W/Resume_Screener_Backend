@@ -43,9 +43,9 @@ router.post('/rerank-chunk', async (req, res) => {
   try {
     await handleRerankChunk(jobId, resumeIds, anchorIds, chunkIndex, jobData);
     res.json({ ok: true });
-  } catch (err) {
+  } catch (err : any) {
     console.error('Rerank chunk failed:', err);
-    res.status(500).json({ error: String(err) });
+    res.status(500).json({message: err.message});
   }
 });
 

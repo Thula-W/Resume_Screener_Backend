@@ -445,7 +445,7 @@ export default {
     // Inside worker queue() — add alongside existing handlers
     if (batch.queue === 'rerank-chunks') {
       await Promise.all(batch.messages.map(async (msg) => {
-        const { jobId, resumeIds, anchorIds, chunkIndex, totalChunks } =
+        const { jobId, resumeIds, anchorIds, chunkIndex, totalChunks, jobData } =
           msg.body as RerankChunkMessage;
 
         const slot      = `worker-${chunkIndex % POOL_SIZE}`;
@@ -455,11 +455,15 @@ export default {
           new Request('http://dummy/internal/rerank-chunk', {
             method:  'POST',
             headers: { 'content-type': 'application/json', 'x-internal': '1' },
-            body:    JSON.stringify({ jobId, resumeIds, anchorIds, chunkIndex }),
+            body:    JSON.stringify({ jobId, resumeIds, anchorIds, chunkIndex, jobData }),
           })
         );
 
-        if (!res.ok) throw new Error(`Rerank chunk ${chunkIndex} failed: ${res.status}`);
+        if (!res.ok) {
+          const errorBody :any = await res.json();
+          throw new Error(`Rerank chunk ${chunkIndex} failed: ${errorBody.message}`);
+          console.log(`Error ${errorBody.message}`);
+        }
 
         // Chunk results are now persisted in RerankChunkResult by the container.
         // Tell the DO this chunk is done.
