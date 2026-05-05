@@ -6,7 +6,7 @@ import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers";
 import { JobStatus } from "@prisma/client";
 
 export const addJob = async (req: Request, res: Response) => {
-  const { title, overview, skills, bio, experience, constraints } = req.body ?? {};
+  const { title, overview, skills, bio, experience, constraints, signals } = req.body ?? {};
   const firebaseUid = (req as any).user?.id;
 
   if (!firebaseUid) {
@@ -36,6 +36,7 @@ export const addJob = async (req: Request, res: Response) => {
         skillsText: skills ?? null,
         bioText: bio ?? null,
         experienceText: experience ?? null,
+        signals: signals?? null,
       },
     });
 
