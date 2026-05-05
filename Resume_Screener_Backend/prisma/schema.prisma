@@ -113,6 +113,7 @@ model ScreeningResult {
   rerankedScore    Float?
   azendlyScore     Float?
   explanation      String?
+  categoryScores   Json?
   modelVersion     String
   createdAt        DateTime @default(now())
 
@@ -161,6 +162,7 @@ model Job {
   title        String
   overview     String?
   constraints  Json?
+  signals      String?
   createdAt    DateTime  @default(now())
 
   // ← replace resumeCount with these

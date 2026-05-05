@@ -4,6 +4,7 @@ import { authenticate } from "../middleware/auth";
 import { addJob, addEvaluations, checkJobStatus, deleteJob } from "../controllers/job.controlls";
 import { upload } from "../middleware/multer";
 import { handleCohereRerankJob } from "../services/cohereRerank";
+import { handleGPTRankJob } from "../services/gptRank";
 import { handleRerankJob } from "../services/rerank.service";
 
 const router = Router();
@@ -19,12 +20,13 @@ router.post('/:jobId/evals',authenticate, upload.fields([
 router.post('/rerank-job',authenticate, checkJobStatus, async (req, res) => {
   const { jobId } = req.body;
   try {
-    const result = await handleCohereRerankJob(jobId);
-    if (result.shouldRank) {
-      await handleRerankJob(jobId); 
-      res.json({ addedToRank : true });
+    const cohereResult = await handleCohereRerankJob(jobId);
+    if (cohereResult.shouldRank) {
+      // await handleRerankJob(jobId); 
+      const rankResult = await handleGPTRankJob(jobId);
+      res.json(rankResult);
     }
-    res.json({ addedToRank : false });
+    res.json({ success: false });
   } catch (err) {
     console.error('Rerank job failed:', err);
     res.status(500).json({ error: String(err) });
