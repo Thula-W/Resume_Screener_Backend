@@ -9,6 +9,7 @@
 import { prisma } from '../config/prisma';
 import { openAiClient } from '../config/openai';
 import { JobStatus } from '@prisma/client';
+import { JsonValue } from '@prisma/client/runtime/client';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ interface CandidateInput {
   cohereScore: number;      // rerankedScore column (0–1)
   content: string;          // resume text
   resumeName: string;
+  contactInfo: JsonValue;
 }
 
 interface CategoryScores {
@@ -54,6 +56,7 @@ interface FinalResult {
   azendlyScore: number;
   categoryScores: CategoryScores;
   resumeName: string;
+  contactInfo: JsonValue;
   explanation: {
     summary: string;
     strengths: string[];
@@ -75,7 +78,6 @@ Before applying the rubric, analyze the resume for "Keyword Stuffing" or "JD Mir
 1. **JD Mirroring**: Does the resume copy phrases from the Job Description word-for-word without unique professional context?
 2. **Logic Check**: Do the sentences between keywords make logical sense? Are there "filler words" or gibberish? 
 **PENALTY:** If a resume is identified as keyword-stuffed or logically incoherent, you must cap ALL scores at 3.
-The exact wording of the summary should be "Keyword Stuffing Detected". And set isIntegrityFailure to true in the output.
 
 ## SCORING RUBRIC
 
@@ -114,8 +116,8 @@ Score each category from 1 to 10 using these strict bands only if the Integrity 
 - Less than 20% of candidates should score above 8 in any category.
 - Base every score on concrete evidence from the resume. No assumptions.
 - If a piece of information is missing from the resume, penalize accordingly.
-- The summary must be 1–2 sentences maximum. Be direct and specific must refer to actual content from the resume compared with the job requirements.
-- Strengths and weaknesses must reference real content from the resume — no generic statements. Give 4,5 most important points  for each strength or weakness, and be specific about what content led to that point.
+- The summary must be 1–2 sentences maximum. Be direct and SPECIFIC must refer to actual content from the resume compared with the job requirements.
+- Strengths and weaknesses must reference real content from the resume — no generic statements. Give 4,5 most important points  for each candidate, and be specific about what content led to that point.
 - IN the explanation and stengths and weekenesses do not refer to other candidates, do not give vagues points .
 - Every strength/weakness must follow this format: [Fact from Resume] <compared to> [Requirement from Job].Example: 'Has 4 years of AWS experience which exceeds the 2-year requirement.
 - If a required skill is not mentioned in the resume, you must assume the candidate does NOT have it. Do not give the benefit of the doubt.
@@ -197,13 +199,13 @@ export async function fetchTopTenPercentCandidates(
   const resumeIds = topResults.map((r) => r.resumeId);
   const resumes = await prisma.resume.findMany({
     where: { id: { in: resumeIds } },
-    select: { id: true, content: true, name: true },
+    select: { id: true, content: true, name: true, contactInfo: true },
   });
 
   const contentMap = new Map(
     resumes
-      .filter((r): r is { id: string; content: string; name: string } => r.content !== null)
-      .map((r) => [r.id, { content: r.content, name: r.name }])
+      .filter((r): r is { id: string; content: string; name: string; contactInfo: JsonValue } => r.content !== null)
+      .map((r) => [r.id, { content: r.content, name: r.name, contactInfo: r.contactInfo }])
   );
 
   // Step 4: combine — drop any resume with no content
@@ -213,6 +215,7 @@ export async function fetchTopTenPercentCandidates(
       screeningResultId: r.id,
       resumeId: r.resumeId,
       resumeName: contentMap.get(r.resumeId)!.name,
+      contactInfo: contentMap.get(r.resumeId)!.contactInfo,
       finalScore: r.finalScore,
       cohereScore: r.rerankedScore!,
       content: contentMap.get(r.resumeId)!.content,
@@ -396,7 +399,7 @@ export async function handleGPTRankJob(jobId: string): Promise<FinalResult[] | v
   );
 
   // 4. Split into batches of 10
-  const batches = chunkCandidates(candidates, 10);
+  const batches = chunkCandidates(candidates, 5);
 
   // 5. Score all batches in parallel
   const batchResults = await Promise.all(
@@ -429,6 +432,7 @@ export async function handleGPTRankJob(jobId: string): Promise<FinalResult[] | v
         categoryScores: llm.categoryScores,
         explanation: llm.explanation,
         resumeName: c.resumeName,
+        contactInfo: c.contactInfo,
       };
     });
 

@@ -75,7 +75,7 @@ export const extractJson = async (text: string) => {
     return json;
 }
 
-export const convertJsonToText = (data: any): { bio: string; experience: string; skills: string, attributes: any } => {
+export const convertJsonToText = (data: any): { bio: string; experience: string; skills: string, attributes: any , contactInfo :any } => {
   // 1. Process Bio
   const bioLines: string[] = [];
   const bio = data.bio_bucket;
@@ -118,7 +118,8 @@ export const convertJsonToText = (data: any): { bio: string; experience: string;
     bio: bioLines.join("\n\n"),
     experience: expLines.join("\n\n"),
     skills: skillLines.join("\n"),
-    attributes: data.attributes_bucket
+    attributes: data.attributes_bucket,
+    contactInfo: data.contact_info_bucket
   };
 }
 

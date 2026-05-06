@@ -34,6 +34,11 @@ export const JSON_STRUCTURE = `
     "education": string,
     "languages": string[],
     "certifications": string[]
+  },
+  contact_info_bucket:{
+    "email": string,
+    "phone": string,
+    "location": string
   }
 }`;
 
@@ -46,11 +51,12 @@ You MUST return a JSON object that strictly follows this structure:
 ${JSON_STRUCTURE}
 
 Instructions:
+This extracted data will be used to check whether there is keyword stuffing, so do not alter the wording from the resume.
+Do not summarize, rephrase or alter any text provided, what you will be doing is identifying and categorizing the raw resume text into the  buckets based on the defined mapping logic.
 If data is not present in the text for a certain field, leave it as an empty string.
 Do not invent information.
 If you are uncertain about a data point, it is better to leave it blank than to guess.
 Include role and organisation for projects only if they are explicitly mentioned in the text. If not, leave empty string.
-Do not extract personal information and refernces.
 Analyze the provided resume text and map every relevant data point into one of the following three buckets. Follow the mapping logic strictly, especially for "Messy" sections.
 
 1. Bucket 1: The Skills Bucket (Discrete Signal)
@@ -101,5 +107,8 @@ Rules:
   - Extract formal certifications only (e.g., AWS, Google Cloud, PMP)
   - Return lowercase strings
   - If none found, return []
+
+5 -  contact details bucket:
+- Return email , phone number and location if mentioned in the text, otherwise return empty string for each field. Do not extract information from  references.
 Below is the raw resume text:
 `;
