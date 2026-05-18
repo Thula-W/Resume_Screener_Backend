@@ -5,6 +5,98 @@ import type {AddEvaluationsRequest, EvaluationPair} from "../types"
 import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers";
 import { JobStatus } from "@prisma/client";
 
+export const getJobsOfUser = async (req: Request, res: Response) => {
+  const firebaseUid = (req as any).user?.id;
+
+  if (!firebaseUid) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+
+  try {
+    let user = await prisma.user.findUnique({
+      where: { firebaseUid },
+    });
+
+    if (!user?.id) {
+      throw new Error("You must be logged in to create a job");
+    }
+
+    const jobs = await prisma.job.findMany({
+      where: { userId: user?.id },
+      select :{id: true, title: true, overview: true, status: true, totalResumes:true, skillsText: true, bioText: true, experienceText: true}
+    });
+    res.status(200).json(jobs);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err });
+  }
+};
+
+export const getRankingsForJob = async (req: Request, res: Response) => {
+  const firebaseUid = (req as any).user?.id;
+  const { jobId } = req.body as { jobId: string };
+
+  if (!firebaseUid) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    let job = await prisma.job.findUnique({
+      where: { id: jobId },
+    });
+
+    if (job?.status !== JobStatus.RANKED){
+      return res.status(400).json({ error: "Job not ranked yet" });
+    } 
+
+    // 1. Fetch from database with the 'resume' relation
+    const topPicks = await prisma.screeningResult.findMany({
+      where: { 
+        jobId: jobId, 
+        azendlyScore: { not: null } 
+      },
+      select: { 
+        resumeId: true, 
+        azendlyScore: true, 
+        explanation: true,
+        resume: {
+          select: {
+            name: true,
+            contactInfo: true 
+          }
+        }
+      },
+      orderBy: { 
+        azendlyScore: "desc" 
+      },
+    });
+
+    // 2. Format and destructure JSON safely for the client response
+    const formattedTopPicks = topPicks.map(pick => {
+      // Cast Prisma's Json type into your expected contact shape
+      const contact = (pick.resume?.contactInfo as { email?: string; phone?: string; location?: string }) || {};
+
+      return {
+        resumeId: pick.resumeId,
+        name: pick.resume?.name || "Unknown Candidate",
+        email: contact.email || "",
+        phone: contact.phone || "",
+        location: contact.location || "",
+        azendlyScore: pick.azendlyScore,
+        explanation: pick.explanation
+      };
+    });
+
+    // 3. Return the clean payload
+    res.status(200).json(formattedTopPicks);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err });
+  }
+};
+
 export const addJob = async (req: Request, res: Response) => {
   const { title, overview, skills, bio, experience, constraints, signals } = req.body ?? {};
   const firebaseUid = (req as any).user?.id;

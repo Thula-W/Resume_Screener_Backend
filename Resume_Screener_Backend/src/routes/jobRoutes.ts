@@ -6,6 +6,7 @@ import { upload } from "../middleware/multer";
 import { handleCohereRerankJob } from "../services/cohereRerank";
 import { handleGPTRankJob } from "../services/gptRank";
 import { handleRerankJob } from "../services/rerank.service";
+import { getRankingsForJob } from "../controllers/job.controlls"
 
 const router = Router();
 
@@ -34,5 +35,7 @@ router.post('/rerank-job',authenticate, checkJobStatus, async (req, res) => {
 });
 
 router.post('/delete-job', authenticate, deleteJob);
+
+router.post('/rankings',authenticate, getRankingsForJob)
 
 export default router;
