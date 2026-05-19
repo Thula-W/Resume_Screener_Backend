@@ -54,16 +54,21 @@ export const processBatch = async (req: Request, res: Response) => {
         await processResume(resumeId, resume.jobId, job?.constraints);
         return { resumeId, jobId, outcome: 'processed' as const };
 
-      } catch (err) {
+      } catch (err : any) {
         console.error(`Failed resume ${resumeId}:`, err);
         const failedResume = await prisma.resume.update({
           where: { id: resumeId },
           data:  { status: 'FAILED', retryCount: { increment: 1 } },
         });
+        const serializedError = {
+          message: err?.message || "Unknown error string",
+          stack: err?.stack || null,
+          code: err?.code || null // Great for catching Prisma target errors or R2 status codes
+        };
         if (failedResume.retryCount >= 3) {
-          return { resumeId, jobId, outcome: 'failed' as const, retriable: false };
+          return { resumeId, jobId, outcome: 'failed' as const, retriable: false , err: serializedError };
         }
-        return { resumeId, jobId, outcome: 'failed' as const, retriable: true };
+        return { resumeId, jobId, outcome: 'failed' as const, retriable: true ,err: serializedError };
       }
       finally{
         await checkAndFinalizeJob(jobId);

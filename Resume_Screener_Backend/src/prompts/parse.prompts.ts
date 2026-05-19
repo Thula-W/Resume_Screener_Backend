@@ -95,7 +95,7 @@ Rules:
 
 - education:
   - Normalize to one of: "high_school", "bachelors", "masters", "phd", "diploma"
-  - Choose the HIGHEST level only
+  - Choose the HIGHEST COMPLETED level only
   - If unclear, return ""
 
 - languages:
