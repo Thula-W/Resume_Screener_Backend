@@ -7,6 +7,154 @@ import { AuthRequest } from "../middleware/auth";
 import { enqueueToExtractQueue } from "../lib/queueClient";
 import { JobStatus } from '@prisma/client';
 
+import { GetObjectCommand } from  "@aws-sdk/client-s3";
+import { Readable } from "stream";
+import JSZip from "jszip";
+
+export async function downloadBulkResumes(req: Request, res: Response) {
+  const { resumeIds , jobId} = req.body;
+
+  if (!Array.isArray(resumeIds) || resumeIds.length === 0) {
+    return res.status(400).json({ error: "Invalid or empty resume ID array." });
+  }
+
+  try {
+    const resumes = await prisma.resume.findMany({
+      where: { id: { in: resumeIds } },
+      select: { id: true, name: true, storagePath: true },
+    });
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { title: true },
+    });
+
+    if (resumes.length === 0) {
+      return res.status(404).json({ error: "No matching records found." });
+    }
+
+    const zip = new JSZip();
+
+    // Fetch all R2 files in parallel
+    const results = await Promise.allSettled(
+      resumes
+        .filter((r) => {
+          if (!r.storagePath) {
+            console.warn(`⚠️ Skipping ID ${r.id} — no storagePath`);
+            return false;
+          }
+          return true;
+        })
+        .map(async (resume) => {
+          const command = new GetObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: resume.storagePath!,
+          });
+
+          const s3Response = await r2.send(command);
+
+          if (!s3Response.Body) {
+            throw new Error(`Empty body for key: ${resume.storagePath}`);
+          }
+
+          // Convert stream to buffer
+          const chunks: Uint8Array[] = [];
+          for await (const chunk of s3Response.Body as Readable) {
+            chunks.push(chunk);
+          }
+          const buffer = Buffer.concat(chunks);
+
+          const safeName = resume.name
+            ? resume.name.endsWith(".pdf")
+              ? resume.name
+              : `${resume.name}.pdf`
+            : `Resume_${resume.id}.pdf`;
+
+          zip.file(safeName, buffer);
+          console.log(`✅ Added to zip: ${safeName}`);
+        })
+    );
+
+    results.forEach((result, i) => {
+      if (result.status === "rejected") {
+        console.error(`❌ File ${i} failed:`, result.reason?.message);
+      }
+    });
+
+    // Generate zip buffer and send
+    const zipBuffer = await zip.generateAsync({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 5 },
+    });
+
+    const folderName = `${job?.title ? job.title.replace(/\s+/g, "_") : "Azendly"}_topPicks`;
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${folderName}.zip"`);
+    res.setHeader("Content-Length", zipBuffer.byteLength);
+    res.end(zipBuffer);
+
+    console.log("✅ ZIP sent successfully.");
+  } catch (error: any) {
+    console.error("💥 downloadBulkResumes error:", error);
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Failed to create zip archive.",
+        debugMessage: error.message,
+      });
+    } else if (!res.writableEnded) {
+      res.end();
+    }
+  }
+}
+
+export async function getResumePresignedUrl(req: Request, res: Response) {
+  const { resumeId } = req.params as { resumeId: string };
+  const { action } = req.query; // Expects 'view' or 'download'
+
+  if (!resumeId) {
+    return res.status(400).json({ error: "resumeId parameter is required." });
+  }
+
+  try {
+    // 1. Fetch the unique file path key out of your database
+    const resume = await prisma.resume.findUnique({
+      where: { id: resumeId }
+    });
+
+    if (!resume || !resume.storagePath) {
+      return res.status(404).json({ error: "Resume file reference not found." });
+    }
+
+    // 2. Set up S3 payload rules configuration
+    const commandInput: any = {
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: resume.storagePath, // The storage key path string (e.g., "userId/jobId/filename.pdf")
+    };
+
+    // 3. Inject content headers depending on individual target UX actions
+    if (action === 'download') {
+      // Forces the browser to save the binary payload instead of opening it
+      commandInput.ResponseContentDisposition = `attachment; filename="${resume.name || 'resume.pdf'}"`;
+    } else {
+      // Inline rendering configuration (Forces native PDF viewer tab execution)
+      commandInput.ResponseContentType = "application/pdf";
+      commandInput.ResponseContentDisposition = "inline";
+    }
+
+    const command = new GetObjectCommand(commandInput);
+
+    // 4. Generate the short-lived presigned link (valid for 15 minutes)
+    const url = await getSignedUrl(r2, command, { expiresIn: 900 });
+
+    return res.status(200).json({ url });
+  } catch (error) {
+    console.error("Failed creating safe presigned R2 reference link:", error);
+    return res.status(500).json({ error: "Internal server link generation error." });
+  }
+}
+
 export const uploadIntent = async (req: AuthRequest, res: Response) => {
   try {
     const firebaseUid = req.user?.id;
@@ -73,14 +221,13 @@ export const uploadIntent = async (req: AuthRequest, res: Response) => {
             Key: storagePath,
             ContentType: "application/pdf",
           }),
-          { expiresIn: 60*60*2 }
+          { expiresIn: 60*60 }
         );
 
         return {
           resumeId: resume.id,
-          storagePath: storagePath,
           signedUrl: signedUrl,
-          expiresIn: 60 * 60 * 2, // 2 hours in seconds
+          expiresIn: 60 * 60 , // 1 hours in seconds
         };
       })
     );
