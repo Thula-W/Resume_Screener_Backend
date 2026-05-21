@@ -10,12 +10,13 @@ datasource db {
         
 
 model User {
-  id          String   @id @default(uuid())
-  firebaseUid String   @unique
-  email       String
-  createdAt   DateTime @default(now())
+  id        String   @id
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  jobs      Job[]
 
-  jobs        Job[]
+  @@map("users")
 }
 
 
