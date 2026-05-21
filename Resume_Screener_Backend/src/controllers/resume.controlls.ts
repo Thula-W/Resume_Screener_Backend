@@ -157,7 +157,7 @@ export async function getResumePresignedUrl(req: Request, res: Response) {
 
 export const uploadIntent = async (req: AuthRequest, res: Response) => {
   try {
-    const firebaseUid = req.user?.id;
+    const id = req.user?.id;
     const { jobId, files } = req.body;
 
     if (!jobId) {
@@ -174,7 +174,7 @@ export const uploadIntent = async (req: AuthRequest, res: Response) => {
     }
 
     const user = await prisma.user.findUnique({
-      where: { firebaseUid },
+      where: { id },
     });
 
     if (!user || job.userId !== user.id) {
@@ -201,7 +201,7 @@ export const uploadIntent = async (req: AuthRequest, res: Response) => {
       fileList.map(async (file) => {
         const fileId = `${Date.now()}_${crypto.randomUUID()}`;
         const fileName = file.name || "resume.pdf";
-        const storagePath = `${firebaseUid}/${jobId}/${fileId}_${fileName}`;
+        const storagePath = `${id}/${jobId}/${fileId}_${fileName}`;
 
         // Create resume record with PENDING status
         const resume = await prisma.resume.create({
@@ -247,7 +247,7 @@ export const uploadIntent = async (req: AuthRequest, res: Response) => {
 
 export const confirmUpload = async (req: AuthRequest, res: Response) => {
   try {
-    const firebaseUid = req.user?.id;
+    const id = req.user?.id;
     const { jobId, resumes, triggerScoring = false } = req.body;
     // ↑ new: optional triggerScoring flag from client
 
@@ -257,7 +257,7 @@ export const confirmUpload = async (req: AuthRequest, res: Response) => {
 
     const [job, user] = await Promise.all([
       prisma.job.findUnique({ where: { id: jobId } }),
-      prisma.user.findUnique({ where: { firebaseUid } }),
+      prisma.user.findUnique({ where: { id } }),
     ]);
 
     if (!job)                        return res.status(404).json({ error: 'Job not found' });
@@ -328,11 +328,11 @@ export const getJobTotal = async (req: Request, res: Response) => {
 // Internal endpoint — worker calls this to validate trigger-scoring request
 export const validateTrigger = async (req: AuthRequest, res: Response) => {
   const { jobId } = req.body;
-  const firebaseUid = req.user?.id;
+  const id = req.user?.id;
 
   const [job, user] = await Promise.all([
     prisma.job.findUnique({ where: { id: jobId } }),
-    prisma.user.findUnique({ where: { firebaseUid } }),
+    prisma.user.findUnique({ where: { id } }),
   ]);
 
   if (!job)                          return res.status(404).json({ error: 'Job not found' });

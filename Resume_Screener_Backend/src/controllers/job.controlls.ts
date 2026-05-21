@@ -6,16 +6,16 @@ import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers";
 import { JobStatus } from "@prisma/client";
 
 export const getJobsOfUser = async (req: Request, res: Response) => {
-  const firebaseUid = (req as any).user?.id;
+  const id = (req as any).user?.id;
 
-  if (!firebaseUid) {
+  if (!id) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
 
   try {
     let user = await prisma.user.findUnique({
-      where: { firebaseUid },
+      where: { id },
     });
 
     if (!user?.id) {
@@ -34,10 +34,10 @@ export const getJobsOfUser = async (req: Request, res: Response) => {
 };
 
 export const getRankingsForJob = async (req: Request, res: Response) => {
-  const firebaseUid = (req as any).user?.id;
+  const id = (req as any).user?.id;
   const { jobId } = req.body as { jobId: string };
 
-  if (!firebaseUid) {
+  if (!id) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -99,9 +99,9 @@ export const getRankingsForJob = async (req: Request, res: Response) => {
 
 export const addJob = async (req: Request, res: Response) => {
   const { title, overview, skills, bio, experience, constraints, signals } = req.body ?? {};
-  const firebaseUid = (req as any).user?.id;
+  const id = (req as any).user?.id;
 
-  if (!firebaseUid) {
+  if (!id) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -113,7 +113,7 @@ export const addJob = async (req: Request, res: Response) => {
 
   try {
     let user = await prisma.user.findUnique({
-      where: { firebaseUid },
+      where: { id },
     });
 
     if (!user?.id) {
@@ -155,14 +155,14 @@ try {
 
 export const checkJobStatus = async (req: Request, res: Response, next: NextFunction) => {
   const { jobId } = req.body;
-  const firebaseUid = (req as any).user?.id;
+  const id = (req as any).user?.id;
 
-  if (!firebaseUid) {
+  if (!id) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   try {
     let user = await prisma.user.findUnique({
-      where: { firebaseUid },
+      where: { id },
     });
 
     if (!user){
@@ -187,16 +187,16 @@ export const checkJobStatus = async (req: Request, res: Response, next: NextFunc
 
 export const deleteJob = async (req: Request, res: Response) => {
   const { jobId } = req.body;
-  const firebaseUid = (req as any).user?.id;
+  const id = (req as any).user?.id;
 
   const user = await prisma.user.findUnique({
-    where: { firebaseUid },
+    where: { id },
   });
 
   const job = await prisma.job.findUnique({
     where: { id: jobId, userId: user?.id },
   });
-  if (!firebaseUid || !user || !job) {
+  if (!id || !user || !job) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   try {

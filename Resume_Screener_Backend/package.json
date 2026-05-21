@@ -7,7 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "auth": "npx tsx src/scripts/supabaseAuth.ts",
     "start": "npx tsx src/server.ts",
-    "build": "npx tsc",
+    "build": "npx prisma generate && npx tsc",
     "start:prod": "node dist/server.js"
   },
   "keywords": [],
