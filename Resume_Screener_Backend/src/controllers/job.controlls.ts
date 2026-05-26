@@ -4,6 +4,8 @@ import { combineResumeText, convertJsonToText, extractJson, extractTextFromPDF }
 import type {AddEvaluationsRequest, EvaluationPair} from "../types"
 import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers";
 import { JobStatus } from "@prisma/client";
+import { r2 } from "../config/r2";
+import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
 
 export const getJobsOfUser = async (req: Request, res: Response) => {
   const id = (req as any).user?.id;
@@ -196,48 +198,72 @@ export const deleteJob = async (req: Request, res: Response) => {
   const job = await prisma.job.findUnique({
     where: { id: jobId, userId: user?.id },
   });
+
   if (!id || !user || !job) {
     return res.status(401).json({ error: "Unauthorized" });
   }
+
   try {
     console.log(`Starting full purge for Job ID: ${jobId}`);
 
-    await prisma.$transaction(async (tx) => {
-      // 1. Get all Resume IDs linked to this job
-      const resumes = await tx.resume.findMany({
-        where: { jobId },
-        select: { id: true },
-      });
-      const resumeIds = resumes.map((r) => r.id);
+    // STEP 1: Fetch storage paths BEFORE the transaction starts
+    const resumesToPurge = await prisma.resume.findMany({
+      where: { jobId : jobId },
+      select: { id: true, storagePath: true },
+    });
 
+    const resumeIds = resumesToPurge.map((r) => r.id);
+    // Filter out any empty storage paths just in case
+    const r2Keys = resumesToPurge.map((r) => r.storagePath).filter(Boolean);
+
+    // STEP 2: Execute Database Purge
+    await prisma.$transaction(async (tx) => {
       console.log(`- Found ${resumeIds.length} resumes. Clearing child records...`);
 
-      // 2. Delete downstream Resume dependencies
+      // Delete downstream Resume dependencies
       await tx.resumeEmbedding.deleteMany({ where: { resumeId: { in: resumeIds } } });
       await tx.screeningResult.deleteMany({ where: { resumeId: { in: resumeIds } } });
       await tx.parsedResume.deleteMany({ where: { resumeId: { in: resumeIds } } });
       await tx.batchFailure.deleteMany({ where: { resumeId: { in: resumeIds } } });
 
-      // 3. Delete Job-specific dependencies
+      // Delete Job-specific dependencies
       await tx.evaluations.deleteMany({ where: { jobId } });
       await tx.rerankChunkResult.deleteMany({ where: { jobId } });
 
-      // 4. Delete Resumes
-      // We do this after clearing child records but before deleting Batches/Jobs
+      // Delete Resumes
       await tx.resume.deleteMany({ where: { jobId } });
 
-      // 5. Delete Batches
+      // Delete Batches
       await tx.uploadBatch.deleteMany({ where: { jobId } });
 
-      // 6. Finally, delete the Job itself
+      // Finally, delete the Job itself
       await tx.job.delete({ where: { id: jobId } });
     });
 
+    // STEP 3: Delete files from Cloudflare R2 AFTER the DB transaction succeeds
+    if (r2Keys.length > 0) {
+      console.log(`- DB clear complete. Purging ${r2Keys.length} files from R2...`);
+      
+      // S3 DeleteObjects supports up to 1,000 objects per call. 
+      // If a job can have more than 1,000 resumes, chunk this array.
+      const deleteCommand = new DeleteObjectsCommand({
+        Bucket: "azendly-resumes",
+        Delete: {
+          Objects: r2Keys.map((key) => ({ Key: key })),
+          Quiet: true, // Prevents R2 from returning full status for every single key
+        },
+      });
+
+      await r2.send(deleteCommand);
+      console.log("- R2 files successfully purged.");
+    }
+
     res.status(200).json({ success: true, message: `Job ${jobId} and all associated data deleted successfully.` });
   } catch (error) {
+    console.error("Purge failed:", error);
     res.status(500).json({ error: String(error) });
   } 
-}
+};
 
 //-------------------------------- helpers --------------------------------
 const parseEvaluationRequest = async (
@@ -300,3 +326,58 @@ const processEvaluations = async (req: AddEvaluationsRequest): Promise<void> => 
   }
 };
 
+// ==============================================
+
+// export const deleteJob = async (req: Request, res: Response) => {
+//   const { jobId } = req.body;
+//   const id = (req as any).user?.id;
+
+//   const user = await prisma.user.findUnique({
+//     where: { id },
+//   });
+
+//   const job = await prisma.job.findUnique({
+//     where: { id: jobId, userId: user?.id },
+//   });
+//   if (!id || !user || !job) {
+//     return res.status(401).json({ error: "Unauthorized" });
+//   }
+//   try {
+//     console.log(`Starting full purge for Job ID: ${jobId}`);
+
+//     await prisma.$transaction(async (tx) => {
+//       // 1. Get all Resume IDs linked to this job
+//       const resumes = await tx.resume.findMany({
+//         where: { jobId },
+//         select: { id: true },
+//       });
+//       const resumeIds = resumes.map((r) => r.id);
+
+//       console.log(`- Found ${resumeIds.length} resumes. Clearing child records...`);
+
+//       // 2. Delete downstream Resume dependencies
+//       await tx.resumeEmbedding.deleteMany({ where: { resumeId: { in: resumeIds } } });
+//       await tx.screeningResult.deleteMany({ where: { resumeId: { in: resumeIds } } });
+//       await tx.parsedResume.deleteMany({ where: { resumeId: { in: resumeIds } } });
+//       await tx.batchFailure.deleteMany({ where: { resumeId: { in: resumeIds } } });
+
+//       // 3. Delete Job-specific dependencies
+//       await tx.evaluations.deleteMany({ where: { jobId } });
+//       await tx.rerankChunkResult.deleteMany({ where: { jobId } });
+
+//       // 4. Delete Resumes
+//       // We do this after clearing child records but before deleting Batches/Jobs
+//       await tx.resume.deleteMany({ where: { jobId } });
+
+//       // 5. Delete Batches
+//       await tx.uploadBatch.deleteMany({ where: { jobId } });
+
+//       // 6. Finally, delete the Job itself
+//       await tx.job.delete({ where: { id: jobId } });
+//     });
+
+//     res.status(200).json({ success: true, message: `Job ${jobId} and all associated data deleted successfully.` });
+//   } catch (error) {
+//     res.status(500).json({ error: String(error) });
+//   } 
+// }
