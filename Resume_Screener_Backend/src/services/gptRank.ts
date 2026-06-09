@@ -19,7 +19,7 @@ interface JobMetadata {
   bioText: string | null;
   skillsText: string | null;
   experienceText: string | null;
-  signals: string | null;
+  signals: JsonValue | null;
 }
 
 interface CandidateInput {
@@ -246,18 +246,32 @@ export function buildRubricPrompt(
     ${job.bioText ? `Ideal Candidate Background: ${job.bioText}` : ''}
     ${job.skillsText ? `Required Skills: ${job.skillsText}` : ''}
     ${job.experienceText ? `Required Experience: ${job.experienceText}` : ''}
-    ${job.signals ? `\n## RECRUITER SIGNALS\n${job.signals}` : ''}
     `.trim();
 
-  const examplesBlock =
-    evaluations.length > 0
-      ? `\n## RECRUITER EVALUATION EXAMPLES\nLearn the recruiter's standards and strictness from these past evaluations:\n\n` +
-        evaluations
-          .map(
-            (e, i) => `--- Example ${i + 1} ---\nResume:\n${e.rawText}\n\nRecruiter verdict: ${e.verdict}`
+  // const examplesBlock =
+  //   evaluations.length > 0
+  //     ? `\n## RECRUITER EVALUATION EXAMPLES\nLearn the recruiter's standards and strictness from these past evaluations:\n\n` +
+  //       evaluations
+  //         .map(
+  //           (e, i) => `--- Example ${i + 1} ---\nResume:\n${e.rawText}\n\nRecruiter verdict: ${e.verdict}`
+  //         )
+  //         .join('\n\n')
+  //     : '';
+
+  const signalsData = job.signals as any;
+
+  const signalsBlock = 
+    signalsData?.positiveSignals?.length || signalsData?.negativeSignals?.length
+      ? `\n## RECRUITER PREFERENCE SIGNALS\nWhen evaluating candidates, consider these signals provided by the recruiter for the above position:\n\n` +
+        [
+          ...(signalsData.positiveSignals || []).map(
+            (s: any) => `[POSITIVE ] - Name: ${s.signal_name}\n- Description: ${s.description}`
+          ),
+          ...(signalsData.negativeSignals || []).map(
+            (s: any) => `[NEGATIVE] - Name: ${s.signal_name}\n- Description: ${s.description}`
           )
-          .join('\n\n')
-      : '';
+        ].join('\n\n')
+    : '';
 
   const candidatesBlock =
     `\n## Top 10% CANDIDATES TO EVALUATE\n\n` +
@@ -268,7 +282,7 @@ export function buildRubricPrompt(
       )
       .join('\n\n');
 
-  return `${jobBlock}\n\n${examplesBlock}\n\n${candidatesBlock}`.trim();
+  return `${jobBlock}\n\n${signalsBlock}\n\n${candidatesBlock}`.trim();
 }
 
 // ─── Helper: call GPT-4o-mini for one batch ───────────────────────────────────
@@ -380,11 +394,11 @@ export async function handleGPTRankJob(jobId: string): Promise<FinalResult[] | v
   const job = await fetchJobMetadataWithSignals(jobId);
 
   // 2. Fetch recruiter evaluation examples for few-shot calibration
-  const evaluations = await prisma.evaluations.findMany({
-    where: { jobId },
-    select: { rawText: true, verdict: true },
-    orderBy: { createdAt: 'asc' },
-  });
+  // const evaluations = await prisma.evaluations.findMany({
+  //   where: { jobId },
+  //   select: { rawText: true, verdict: true },
+  //   orderBy: { createdAt: 'asc' },
+  // });
 
   // 3. Fetch top 10% candidates by rerankedScore with their resume content
   const candidates = await fetchTopTenPercentCandidates(jobId);
@@ -405,7 +419,8 @@ export async function handleGPTRankJob(jobId: string): Promise<FinalResult[] | v
   const batchResults = await Promise.all(
     batches.map((batch, i) => {
       console.log(`[gptRerank] scoring batch ${i + 1}/${batches.length} (${batch.length} candidates)`);
-      return scoreOneBatch(job, evaluations, batch);
+      // return scoreOneBatch(job, evaluations, batch);
+      return scoreOneBatch(job, [], batch);
     })
   );
 

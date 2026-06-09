@@ -6,6 +6,9 @@ import { processJobEmbedding, withRetry } from "../utils/embeddingHelpers";
 import { JobStatus } from "@prisma/client";
 import { r2 } from "../config/r2";
 import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
+import { openAiClient } from "../config/openai";
+import { SignalProfile, EvaluationInput } from "../types";
+
 
 export const getJobsOfUser = async (req: Request, res: Response) => {
   const id = (req as any).user?.id;
@@ -293,6 +296,41 @@ const parseEvaluationRequest = async (
 };
 
 
+// const processEvaluations = async (req: AddEvaluationsRequest): Promise<void> => {
+//   const { jobId, pairs } = req;
+
+//   if (!jobId) throw new Error("jobId is required.");
+//   if (!pairs?.length) throw new Error("At least one CV+verdict pair is required.");
+//   if (pairs.length > 3) throw new Error("Maximum of 3 pairs allowed.");
+
+//   const job = await prisma.job.findUnique({ where: { id: jobId } });
+//   if (!job) throw new Error(`Job not found: ${jobId}`);
+
+//   const signals = [];
+//   for (const { cv, verdict } of pairs) {
+//     if (!cv || !verdict?.trim()) {
+//       throw new Error("Each pair must have a PDF file and a non-empty verdict.");
+//     }
+
+//     const buffer = Buffer.from(await cv.arrayBuffer());
+//     const text = await extractTextFromPDF(buffer);
+//     const json = await extractJson(text) || "{}";
+//     const bucketTexts = convertJsonToText(JSON.parse(json));
+
+//     const { attributes, ...restBuckets } = bucketTexts;
+//     const rawText = combineResumeText(restBuckets);
+
+//     // await prisma.evaluations.create({
+//     //   data: {
+//     //     jobId,
+//     //     rawText,
+//     //     verdict: verdict.trim(),
+//     //   },
+//     // });
+//   }
+// };
+
+
 const processEvaluations = async (req: AddEvaluationsRequest): Promise<void> => {
   const { jobId, pairs } = req;
 
@@ -303,26 +341,98 @@ const processEvaluations = async (req: AddEvaluationsRequest): Promise<void> => 
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) throw new Error(`Job not found: ${jobId}`);
 
-  for (const { cv, verdict } of pairs) {
-    if (!cv || !verdict?.trim()) {
-      throw new Error("Each pair must have a PDF file and a non-empty verdict.");
-    }
+  // 1. Process all PDFs in parallel to keep performance optimal
+  const evaluationInputs: EvaluationInput[] = await Promise.all(
+    pairs.map(async ({ cv, verdict }) => {
+      if (!cv || !verdict?.trim()) {
+        throw new Error("Each pair must have a PDF file and a non-empty verdict.");
+      }
 
-    const buffer = Buffer.from(await cv.arrayBuffer());
-    const text = await extractTextFromPDF(buffer);
-    const json = await extractJson(text) || "{}";
-    const bucketTexts = convertJsonToText(JSON.parse(json));
+      const buffer = Buffer.from(await cv.arrayBuffer());
+      const text = await extractTextFromPDF(buffer);
+      const json = await extractJson(text) || "{}";
+      const bucketTexts = convertJsonToText(JSON.parse(json));
 
-    const { attributes, ...restBuckets } = bucketTexts;
-    const rawText = combineResumeText(restBuckets);
+      const { attributes, ...restBuckets } = bucketTexts;
+      const rawText = combineResumeText(restBuckets);
 
-    await prisma.evaluations.create({
-      data: {
-        jobId,
-        rawText,
-        verdict: verdict.trim(),
-      },
+      return {
+        cvText: rawText,
+        userCommentary: verdict.trim(),
+      };
+    })
+  );
+
+  // 2. Send the aggregated collection to get the structured signals
+  const generatedSignals = await generateSignalsFromEvaluations(evaluationInputs);
+
+  // 3. Save the signals to your Job record (adjust field names based on your schema)
+  await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      signals: generatedSignals as any|| null,
+    },
+  });
+};
+
+
+/**
+ * Compiles up to 3 example CVs and their respective text commentaries
+ * into a single, cohesive, weighted Signal Profile.
+ */
+const generateSignalsFromEvaluations = async (
+  evaluations: EvaluationInput[]
+): Promise<SignalProfile> => {
+  
+  // Format the inputs nicely so the LLM clearly understands the boundary of each example
+  const formattedExamples = evaluations
+    .map((evaluation, index) => {
+      return `
+        === EXAMPLE CANDIDATE #${index + 1} ===
+        [Candidate Resume Content]
+        ${evaluation.cvText}
+
+        [Recruiter Commentary / Evaluation]
+        ${evaluation.userCommentary}
+        ==================================
+        `;
+      })
+    .join("\n");
+
+  const systemInstruction = `
+You are an expert recruitment calibration engine. Your job is to analyze up to 3 candidate resumes alongside the user's explicit textual commentary for each. 
+
+Identify the exact underlying patterns, technical skills, architectural choices, achievements, or traits that the user praised (Positive Signals) or criticized/desired (Negative Signals). 
+
+Rules:
+1. Do not extrapolate generic job requirements. Focus entirely on translating the user's specific text feedback into objective, reusable criteria.
+2. Deduplicate signals if multiple examples reveal the same core preference, adjusting importance dynamically.
+3. Keep the descriptions clear, concise, and tailored for evaluating incoming candidates.
+
+Output a JSON object with two arrays: "positiveSignals" and "negativeSignals". Each signal should have a "signalName", a brief "description", and an "importance" level (High, Medium, Low) based on the strength of the user's feedback across examples.
+`;
+
+  try {
+    const response = await openAiClient.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemInstruction },
+        { 
+          role: "user", 
+          content: `Here are the evaluation anchors provided by the user:\n${formattedExamples}\n\nGenerate the cohesive Signal Profile JSON.` 
+        },
+      ],
+      response_format: { type: "json_object" }, 
+      temperature: 0.2, 
     });
+
+    const content = response.choices[0].message.content;
+    if (!content) throw new Error("Failed to receive a response from the LLM provider.");
+
+    return JSON.parse(content) as SignalProfile;
+  } catch (error) {
+    console.error("Error generating hiring signals via LLM:", error);
+    throw new Error("Failed to process hiring calibration signals.");
   }
 };
 

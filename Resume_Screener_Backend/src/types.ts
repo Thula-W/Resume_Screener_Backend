@@ -56,3 +56,19 @@ export interface RerankSaveItem {
   screeningResultId: string;
   rerankedScore: number;
 }
+
+export interface EvaluationInput {
+  cvText: string;
+  userCommentary: string;
+}
+
+interface Signal {
+  signalName: string;
+  description: string;
+  importance: "High" | "Medium" | "Low";
+}
+
+export interface SignalProfile {
+  positiveSignals: Signal[];
+  negativeSignals: Signal[];
+}

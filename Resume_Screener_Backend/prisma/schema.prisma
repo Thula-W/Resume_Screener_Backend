@@ -164,7 +164,7 @@ model Job {
   title        String
   overview     String?
   constraints  Json?
-  signals      String?
+  signals      Json?
   createdAt    DateTime  @default(now())
 
   // ← replace resumeCount with these
