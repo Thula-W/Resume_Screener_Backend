@@ -57,6 +57,74 @@ async function getRemainingCredits(userId: string): Promise<RemainingCredits | n
 }
 
 
+class LimitExceededError extends Error {
+  constructor(public type: 'resumes' | 'rankings', public limit: number, public used: number) {
+    super(`${type} limit reached (${used}/${limit})`)
+  }
+}
+
+// ── Increment resume usage ──────────────────────────────────────────────
+export async function incrementResumeUsage(userId: string, count: number = 1) {
+  return prisma.$transaction(async (tx) => {
+    const subscription = await tx.subscription.findUnique({
+      where: { userId },
+      include: { plan: true },
+    })
+    if (!subscription) throw new Error('No subscription found')
+
+    const ledger = await tx.usageLedger.findUnique({
+      where: {
+        subscriptionId_periodStart: {
+          subscriptionId: subscription.id,
+          periodStart: subscription.currentPeriodStart,
+        },
+      },
+    })
+    if (!ledger) throw new Error('No active usage period')
+
+    if (ledger.resumesUsed + count > subscription.plan.resumeLimit) {
+      throw new LimitExceededError('resumes', subscription.plan.resumeLimit, ledger.resumesUsed)
+    }
+
+    return tx.usageLedger.update({
+      where: { id: ledger.id },
+      data: { resumesUsed: { increment: count } },
+    })
+  })
+}
+
+// ── Increment ranking usage ─────────────────────────────────────────────
+export async function incrementRankingUsage(userId: string, count: number = 1) {
+  return prisma.$transaction(async (tx) => {
+    const subscription = await tx.subscription.findUnique({
+      where: { userId },
+      include: { plan: true },
+    })
+    if (!subscription) throw new Error('No subscription found')
+
+    const ledger = await tx.usageLedger.findUnique({
+      where: {
+        subscriptionId_periodStart: {
+          subscriptionId: subscription.id,
+          periodStart: subscription.currentPeriodStart,
+        },
+      },
+    })
+    if (!ledger) throw new Error('No active usage period')
+
+    if (ledger.rankingsUsed + count > subscription.plan.rankingLimit) {
+      throw new LimitExceededError('rankings', subscription.plan.rankingLimit, ledger.rankingsUsed)
+    }
+
+    return tx.usageLedger.update({
+      where: { id: ledger.id },
+      data: { rankingsUsed: { increment: count } },
+    })
+  })
+}
+
+export { LimitExceededError }
+
 // export const getMe = async (req: AuthRequest, res: Response) => {
 //   const { id, email } = req.user!;
 

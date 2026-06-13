@@ -10,6 +10,7 @@ import { JobStatus } from '@prisma/client';
 import { GetObjectCommand } from  "@aws-sdk/client-s3";
 import { Readable } from "stream";
 import JSZip from "jszip";
+import {incrementResumeUsage} from "./user.controller";
 
 export async function downloadBulkResumes(req: Request, res: Response) {
   const { resumeIds , jobId} = req.body;
@@ -183,18 +184,19 @@ export const uploadIntent = async (req: AuthRequest, res: Response) => {
 
     // Handle both single and bulk uploads
     const fileList = files && Array.isArray(files) ? files : [{ name: "resume.pdf" }];
-    const currentResumeCount = await prisma.resume.count({
-      where: { jobId },
-    });
+    // const currentResumeCount = await prisma.resume.count({
+    //   where: { jobId },
+    // });
 
-    const totalResumes = currentResumeCount + fileList.length;
-    const RESUME_LIMIT = 100; // Adjust as needed
+    // const totalResumes = currentResumeCount + fileList.length;
+    // const RESUME_LIMIT = 100; // Adjust as needed
 
-    if (totalResumes > RESUME_LIMIT) {
-      return res.status(409).json({
-        error: `Resume limit exceeded. Current: ${currentResumeCount}, Attempting to add: ${fileList.length}, Limit: ${RESUME_LIMIT}`,
-      });
-    }
+    // if (totalResumes > RESUME_LIMIT) {
+    //   return res.status(409).json({
+    //     error: `Resume limit exceeded. Current: ${currentResumeCount}, Attempting to add: ${fileList.length}, Limit: ${RESUME_LIMIT}`,
+    //   });
+    // }
+
 
     // Generate signed URLs and create resume records
     const uploadIntents = await Promise.all(
@@ -232,6 +234,7 @@ export const uploadIntent = async (req: AuthRequest, res: Response) => {
       })
     );
 
+    await incrementResumeUsage(id ?? '', fileList.length);
     res.json({
       uploadIntents,
       constraints: {
