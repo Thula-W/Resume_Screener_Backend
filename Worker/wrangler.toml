@@ -27,6 +27,7 @@ new_sqlite_classes = ["JobProgressTracker", "RerankProgressTracker"]
 name = "my_backend"
 class_name = "MyBackendContainer"
 image = "../Resume_Screener_Backend/Dockerfile"
+instance_type = "basic"
 
 [[queues.producers]]
 binding  = "EXTRACT_QUEUE"
