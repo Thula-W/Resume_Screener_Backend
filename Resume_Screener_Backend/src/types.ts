@@ -72,3 +72,14 @@ export interface SignalProfile {
   positiveSignals: Signal[];
   negativeSignals: Signal[];
 }
+
+export interface RemainingCredits {
+  resumesRemaining: number
+  rankingsRemaining: number
+  resumeLimit: number
+  rankingLimit: number
+  resumesUsed: number
+  rankingsUsed: number
+  periodStart: Date
+  periodEnd: Date
+}

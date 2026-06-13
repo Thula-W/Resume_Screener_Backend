@@ -15,7 +15,8 @@ model User {
   name      String
   createdAt DateTime @default(now())
   jobs      Job[]
-
+  subscription Subscription?
+  
   @@map("users")
 }
 
@@ -198,4 +199,70 @@ model RerankChunkResult {
 
   @@index([jobId])
   @@index([jobId, chunkIndex])
+}
+
+
+//---------------------------------------
+
+model Plan {
+  id            String   @id @default(uuid())
+  name          String   @unique       // "free" | "basic" | "pro"
+  displayName   String                 // "Free", "Basic", "Pro"
+  resumeLimit   Int                    // resumes processed per billing period
+  rankingLimit  Int                    // ranking jobs per billing period
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  userId             String             @unique   // one active sub per user
+  planId             String
+  status             SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+
+  // Payment fields — null for now, filled when PayHere is integrated
+  payhereOrderId        String? @unique
+  payhereSubscriptionId String? @unique
+  payhereCustomerToken  String?
+  installmentsPaid      Int     @default(0)
+  cancelAtPeriodEnd     Boolean @default(false)
+  cancelledAt           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plan        Plan          @relation(fields: [planId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  usageLedger UsageLedger[]
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+model UsageLedger {
+  id             String   @id @default(uuid())
+  subscriptionId String
+  periodStart    DateTime
+  periodEnd      DateTime
+  resumesUsed    Int      @default(0)
+  rankingsUsed   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@unique([subscriptionId, periodStart])
+  @@map("usage_ledgers")
 }
