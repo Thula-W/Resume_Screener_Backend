@@ -16,7 +16,7 @@ model User {
   createdAt DateTime @default(now())
   jobs      Job[]
   subscription Subscription?
-  
+  feedbacks    Feedback[]
   @@map("users")
 }
 
@@ -265,4 +265,21 @@ model UsageLedger {
 
   @@unique([subscriptionId, periodStart])
   @@map("usage_ledgers")
+}
+
+model Feedback {
+  id                String   @id @default(uuid())
+  userId            String   
+  rating            Int      
+  feedback          String   
+  company           String?  
+  hiresPerMonth     Int
+  avgResumesPerRole Int
+  suggestions       String?  
+  createdAt         DateTime @default(now())
+
+  // Relation link: cascade deletes feedback if the user is deleted
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("feedbacks")
 }

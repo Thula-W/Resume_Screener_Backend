@@ -21,6 +21,32 @@ export const getCreditDetails = async (req: AuthRequest, res: Response) => {
     res.json(credits);
 }
 
+export const addFeedBack = async (req: AuthRequest, res: Response) => {
+  const  feedback  = req.body.feedback;
+  const userId = req.body.userId || req.user?.id;
+
+  if (!userId) {
+    return res.status(400).json({ error: "User ID is required" });
+  }
+
+  try {
+    const savedFeedback = await prisma.feedback.create({
+      data: {
+        userId: userId, 
+        rating: feedback.rating,
+        feedback: feedback.feedback,
+        company: feedback.company,
+        hiresPerMonth: feedback.hiresPerMonth,
+        avgResumesPerRole: feedback.avgResumesPerRole,
+        suggestions: feedback.suggestions,
+      },
+    });
+    res.json(savedFeedback);
+  } catch (error) {
+    console.error("Error saving feedback:", error);
+    res.status(500).json({ error: "Failed to save feedback" });
+}}
+
 // ------------------------------------  helpers --------------------------------
 
 async function getRemainingCredits(userId: string): Promise<RemainingCredits | null> {
