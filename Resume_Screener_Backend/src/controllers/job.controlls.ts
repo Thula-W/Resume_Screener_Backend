@@ -161,7 +161,8 @@ try {
 export const checkJobStatus = async (req: Request, res: Response, next: NextFunction) => {
   const { jobId } = req.body;
   const id = (req as any).user?.id;
-
+  const POLLING_INTERVAL_MS = 5000; // Check every 5 seconds
+  
   if (!id) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -175,15 +176,58 @@ export const checkJobStatus = async (req: Request, res: Response, next: NextFunc
     }
     const job = await prisma.job.findUnique({
       where: { id: jobId, userId: user?.id },
-      select: { status: true },
+      select: { status: true, totalResumes: true },
     });
     
-    if (job?.status === JobStatus.SCORED){
-      next();
+    if (job?.status === JobStatus.SCORED) {
+     next();
+  }
+
+  // 2. If it's not even processing yet (e.g., PENDING or FAILED), reject it outright
+  if (job?.status !== JobStatus.PROCESSING) {
+    return res.status(400).json({ 
+      error: `Job cannot be reranked. Current status is ${job?.status}` 
+    });
+  }
+
+  // 3. If it IS currently PROCESSING, wait for it to finish
+  console.log(`Job ${jobId} is processing. Waiting for SCORED status...`);
+  
+  let totalTimeWaited = 0;
+  const MAX_WAIT_TIME_MS = 10000 * job.totalResumes * 3
+
+  while (job.status === JobStatus.PROCESSING && totalTimeWaited < MAX_WAIT_TIME_MS) {
+    // Wait for the interval duration
+    await new Promise((resolve) => setTimeout(resolve, POLLING_INTERVAL_MS));
+    totalTimeWaited += POLLING_INTERVAL_MS;
+
+    // Fetch the freshest status directly from the database
+    const updatedJob = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { status: true }
+    });
+
+    let currentStatus = updatedJob?.status ?? JobStatus.FAILED;
+
+    if (currentStatus === JobStatus.SCORED) {
+      console.log(`Job ${jobId} successfully transitioned to SCORED during wait.`);
+       next(); // Pass to the reranking controller!
     }
-    else{
-      res.status(400).json({ error: "Job not ready for reranking" });
-    }
+  }
+
+  // 4. If the loop exits and it's still processing, handle the timeout
+  if (job.status === JobStatus.PROCESSING) {
+    return res.status(202).json({ 
+      message: "Job processing is taking longer than expected. Please check back shortly.",
+      status: job.status
+    });
+  }
+
+  // 5. If it changed to something bad like FAILED during the wait
+  return res.status(400).json({ 
+    error: `Job processing failed or aborted. Final status: ${job.status}` 
+  });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err });
