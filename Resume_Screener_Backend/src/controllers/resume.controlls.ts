@@ -11,6 +11,7 @@ import { GetObjectCommand } from  "@aws-sdk/client-s3";
 import { Readable } from "stream";
 import JSZip from "jszip";
 import {incrementResumeUsage} from "./user.controller";
+import { withRetry } from "../utils/embeddingHelpers";
 
 export async function downloadBulkResumes(req: Request, res: Response) {
   const { resumeIds , jobId} = req.body;
@@ -287,6 +288,7 @@ export const confirmUpload = async (req: AuthRequest, res: Response) => {
     });
 
     // ── 2. Atomically increment job.totalResumes (multi-batch safe) ────────
+    await withRetry(async () => {
     await prisma.$transaction([
       prisma.job.update({
         where: { id: jobId },
@@ -301,7 +303,7 @@ export const confirmUpload = async (req: AuthRequest, res: Response) => {
         where: { id: { in: resumeIds } },
         data:  { status: 'UPLOADED', uploadedAt: new Date(), batchId: batch.id },
       }),
-    ]);
+    ]);});
 
     // ── 3. Enqueue to Cloudflare Queue via Worker binding ──────────────────
     // The container calls back to the worker's internal enqueue endpoint

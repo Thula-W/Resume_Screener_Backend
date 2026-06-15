@@ -3,15 +3,29 @@ import { prisma } from "../config/prisma";
 import { v4 as uuidv4 } from "uuid";
 
 
-export const withRetry = async (fn: () => Promise<void>, retries = 3) => {
+export const withRetry = async <T>(
+  fn: () => Promise<T>, 
+  retries = 3
+): Promise<T> => {
   for (let i = 0; i < retries; i++) {
     try {
-      return await fn();
+      return await fn(); // Returns the data directly if successful
     } catch (err) {
-      if (i === retries - 1) console.error("All retries failed:", err);
-      else await new Promise((r) => setTimeout(r, 1000 * 2 ** i)); // exponential backoff
+      const isLastRetry = i === retries - 1;
+      
+      if (isLastRetry) {
+        console.error(`All ${retries} retries failed.`);
+        throw err; // CRITICAL: Throw the error so the caller knows it failed!
+      }
+      
+      // Exponential backoff: 1s, 2s, 4s...
+      const delay = 1000 * Math.pow(2, i); 
+      console.warn(`Action failed. Retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
+  
+  throw new Error("Retry loop exited unexpectedly"); // Static analysis fallback
 };
 
 export const generateEmbedding = async (text: string): Promise<number[]> => {

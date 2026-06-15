@@ -10,6 +10,7 @@ import { prisma } from '../config/prisma';
 import { openAiClient } from '../config/openai';
 import { JobStatus } from '@prisma/client';
 import { JsonValue } from '@prisma/client/runtime/client';
+import { withRetry } from '../utils/embeddingHelpers';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -366,6 +367,7 @@ export function computeAzendlyScore(
 // ─── Helper: save all results to DB in a single transaction ──────────────────
 
 export async function saveGPTRankResults(results: FinalResult[]): Promise<void> {
+  await withRetry(async () => {
   await prisma.$transaction(
     results.map((r) =>
       prisma.screeningResult.update({
@@ -378,7 +380,7 @@ export async function saveGPTRankResults(results: FinalResult[]): Promise<void> 
       })
     )
   );
-}
+})}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ENTRY POINT
